@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ProTeen Nation — Admin Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root { --gold: #e8b84b; --black: #000; --black2: #0a0a0a; --black3: #111; --white: #fff; --green: #1D9E75; --red: #E24B4A; --gray: rgba(255,255,255,0.5); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'DM Sans', sans-serif; background: var(--black2); color: var(--white); min-height: 100vh; }
+
+  /* LOGIN */
+  #loginScreen { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; }
+  .login-box { background: var(--black3); border: 0.5px solid rgba(232,184,75,0.2); border-radius: 16px; padding: 40px; width: 100%; max-width: 380px; text-align: center; }
+  .login-title { font-family: 'Playfair Display', serif; font-size: 24px; margin-bottom: 6px; }
+  .login-sub { font-size: 13px; color: var(--gray); margin-bottom: 28px; }
+  .login-input { width: 100%; background: rgba(255,255,255,0.06); border: 0.5px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 12px 14px; font-size: 14px; color: var(--white); font-family: 'DM Sans', sans-serif; outline: none; margin-bottom: 12px; }
+  .login-input:focus { border-color: var(--gold); }
+  .login-btn { width: 100%; background: var(--gold); color: var(--black); padding: 12px; border-radius: 8px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; }
+  .login-error { color: #E24B4A; font-size: 13px; margin-top: 8px; display: none; }
+
+  /* DASHBOARD */
+  #dashboard { display: none; }
+  header { background: var(--black); border-bottom: 1px solid rgba(232,184,75,0.2); padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10; }
+  .header-brand { font-family: 'Playfair Display', serif; font-size: 18px; }
+  .header-brand span { color: var(--gold); }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .mode-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--gray); }
+  .mode-badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+  .mode-review { background: rgba(232,184,75,0.15); color: var(--gold); }
+  .mode-auto { background: rgba(29,158,117,0.15); color: #5DCAA5; }
+  .mine-btn { background: var(--gold); color: var(--black); padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; border: none; cursor: pointer; }
+  .mine-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* STATS */
+  .stats-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; padding: 24px 32px; background: var(--black3); border-bottom: 0.5px solid rgba(255,255,255,0.06); }
+  .stat-card { background: var(--black2); border-radius: 10px; padding: 16px; text-align: center; border: 0.5px solid rgba(255,255,255,0.06); }
+  .stat-num { font-size: 28px; font-weight: 600; margin-bottom: 4px; }
+  .stat-label { font-size: 12px; color: var(--gray); text-transform: uppercase; letter-spacing: 0.08em; }
+
+  /* MAIN LAYOUT */
+  .main { display: grid; grid-template-columns: 200px 1fr; min-height: calc(100vh - 61px - 93px); }
+  .sidebar { background: var(--black3); border-right: 0.5px solid rgba(255,255,255,0.06); padding: 20px 0; }
+  .sidebar-title { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.3); padding: 0 20px 10px; }
+  .sidebar-item { display: flex; align-items: center; gap: 10px; padding: 10px 20px; font-size: 13px; color: var(--gray); cursor: pointer; transition: all 0.15s; border-left: 2px solid transparent; }
+  .sidebar-item:hover { color: var(--white); background: rgba(255,255,255,0.04); }
+  .sidebar-item.active { color: var(--gold); border-left-color: var(--gold); background: rgba(232,184,75,0.06); }
+  .sidebar-count { margin-left: auto; background: rgba(232,184,75,0.15); color: var(--gold); font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 10px; }
+  .content { padding: 28px 32px; overflow-y: auto; }
+
+  /* FILTER BAR */
+  .filter-bar { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+  .filter-group { display: flex; gap: 8px; }
+  .filter-btn { background: rgba(255,255,255,0.06); border: 0.5px solid rgba(255,255,255,0.12); color: var(--gray); padding: 7px 14px; border-radius: 20px; font-size: 12px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.2s; }
+  .filter-btn:hover, .filter-btn.active { background: rgba(232,184,75,0.12); border-color: var(--gold); color: var(--gold); }
+
+  /* ARTICLE CARDS */
+  .articles-grid { display: flex; flex-direction: column; gap: 12px; }
+  .article-card { background: var(--black3); border: 0.5px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 18px 20px; display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: start; transition: border-color 0.2s; }
+  .article-card:hover { border-color: rgba(255,255,255,0.15); }
+  .article-card.approved { border-left: 3px solid var(--green); }
+  .article-card.rejected { opacity: 0.45; border-left: 3px solid var(--red); }
+  .article-topic { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); margin-bottom: 5px; }
+  .article-title { font-size: 15px; font-weight: 500; margin-bottom: 6px; line-height: 1.4; }
+  .article-excerpt { font-size: 13px; color: var(--gray); line-height: 1.6; margin-bottom: 10px; }
+  .article-meta { display: flex; gap: 12px; align-items: center; font-size: 11px; color: rgba(255,255,255,0.3); flex-wrap: wrap; }
+  .type-badge { padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+  .badge-article { background: rgba(83,74,183,0.2); color: #AFA9EC; }
+  .badge-video { background: rgba(216,90,48,0.2); color: #F0997B; }
+  .badge-news { background: rgba(55,138,221,0.2); color: #85B7EB; }
+  .badge-tip { background: rgba(29,158,117,0.2); color: #5DCAA5; }
+  .score-pill { background: rgba(255,255,255,0.06); padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+  .article-actions { display: flex; flex-direction: column; gap: 8px; min-width: 110px; }
+  .action-btn { padding: 8px 14px; border-radius: 7px; font-size: 12px; font-weight: 600; border: none; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; text-align: center; }
+  .approve-btn { background: rgba(29,158,117,0.15); color: #5DCAA5; border: 0.5px solid rgba(29,158,117,0.3); }
+  .approve-btn:hover { background: var(--green); color: var(--white); }
+  .reject-btn { background: rgba(226,75,74,0.1); color: #F09595; border: 0.5px solid rgba(226,75,74,0.2); }
+  .reject-btn:hover { background: var(--red); color: var(--white); }
+  .view-btn { background: rgba(255,255,255,0.06); color: var(--gray); border: 0.5px solid rgba(255,255,255,0.1); text-decoration: none; display: block; }
+  .view-btn:hover { color: var(--white); }
+
+  /* EMPTY STATE */
+  .empty-state { text-align: center; padding: 80px 24px; }
+  .empty-icon { font-size: 48px; margin-bottom: 16px; }
+  .empty-title { font-family: 'Playfair Display', serif; font-size: 22px; margin-bottom: 8px; }
+  .empty-text { font-size: 14px; color: var(--gray); max-width: 400px; margin: 0 auto; line-height: 1.6; }
+
+  /* SETTINGS PANEL */
+  .settings-panel { background: var(--black3); border: 0.5px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 28px; max-width: 560px; }
+  .setting-row { display: flex; align-items: center; justify-content: space-between; padding: 16px 0; border-bottom: 0.5px solid rgba(255,255,255,0.06); }
+  .setting-row:last-child { border-bottom: none; }
+  .setting-label { font-size: 15px; font-weight: 500; margin-bottom: 3px; }
+  .setting-desc { font-size: 12px; color: var(--gray); }
+  .setting-control select, .setting-control input[type=range] { background: rgba(255,255,255,0.06); border: 0.5px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 10px; color: var(--white); font-family: 'DM Sans', sans-serif; font-size: 13px; outline: none; }
+  .setting-control select option { background: var(--black2); }
+  .save-btn { margin-top: 20px; background: var(--gold); color: var(--black); padding: 10px 24px; border-radius: 8px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; }
+
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--black3); border: 0.5px solid rgba(255,255,255,0.15); border-radius: 10px; padding: 12px 18px; font-size: 14px; display: none; z-index: 999; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+  .toast.show { display: block; animation: slideUp 0.3s ease; }
+  @keyframes slideUp { from{transform:translateY(10px);opacity:0} to{transform:translateY(0);opacity:1} }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen">
+  <div class="login-box">
+    <div style="font-size:32px;margin-bottom:12px;">🌳</div>
+    <h1 class="login-title">ProTeen Nation</h1>
+    <p class="login-sub">Admin Dashboard — Team Access Only</p>
+    <input type="password" class="login-input" id="passwordInput" placeholder="Enter admin password" onkeydown="if(event.key==='Enter')login()">
+    <button class="login-btn" onclick="login()">Sign in</button>
+    <p class="login-error" id="loginError">Incorrect password. Please try again.</p>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard">
+  <header>
+    <div class="header-brand">ProTeen <span>Nation</span> · Admin</div>
+    <div class="header-right">
+      <div class="mode-toggle">
+        Mode: <span class="mode-badge mode-review" id="modeBadge">Review</span>
+      </div>
+      <button class="mine-btn" id="mineBtn" onclick="triggerMine()">⚡ Mine Now</button>
+    </div>
+  </header>
+
+  <div class="stats-bar" id="statsBar">
+    <div class="stat-card"><div class="stat-num" id="statTotal">—</div><div class="stat-label">Total articles</div></div>
+    <div class="stat-card"><div class="stat-num" style="color:var(--gold);" id="statPending">—</div><div class="stat-label">Pending review</div></div>
+    <div class="stat-card"><div class="stat-num" style="color:#5DCAA5;" id="statApproved">—</div><div class="stat-label">Live on site</div></div>
+    <div class="stat-card"><div class="stat-num" style="color:#F09595;" id="statRejected">—</div><div class="stat-label">Rejected</div></div>
+  </div>
+
+  <div class="main">
+    <div class="sidebar">
+      <p class="sidebar-title">View</p>
+      <div class="sidebar-item active" onclick="loadView('pending', this)">
+        📬 Review queue <span class="sidebar-count" id="pendingCount">0</span>
+      </div>
+      <div class="sidebar-item" onclick="loadView('approved', this)">✅ Approved</div>
+      <div class="sidebar-item" onclick="loadView('all', this)">📋 All articles</div>
+      <div class="sidebar-item" onclick="loadView('settings', this)">⚙️ Settings</div>
+
+      <p class="sidebar-title" style="margin-top:24px;">Topics</p>
+      <div class="sidebar-item" onclick="filterByTopic('all')">All topics</div>
+      <div class="sidebar-item" onclick="filterByTopic('resilience')">💪 Resilience</div>
+      <div class="sidebar-item" onclick="filterByTopic('school')">🎓 School</div>
+      <div class="sidebar-item" onclick="filterByTopic('relationships')">❤️ Relationships</div>
+      <div class="sidebar-item" onclick="filterByTopic('faith')">🙏 Faith</div>
+      <div class="sidebar-item" onclick="filterByTopic('sports')">🏆 Sports</div>
+      <div class="sidebar-item" onclick="filterByTopic('health')">🌱 Health</div>
+      <div class="sidebar-item" onclick="filterByTopic('careers')">🚀 Careers</div>
+      <div class="sidebar-item" onclick="filterByTopic('civics')">🏛️ Civics</div>
+    </div>
+
+    <div class="content" id="mainContent">
+      <div class="empty-state"><div class="empty-icon">⏳</div><h3 class="empty-title">Loading...</h3></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let TOKEN = '';
+let currentView = 'pending';
+let currentTopic = 'all';
+
+function login() {
+  const pw = document.getElementById('passwordInput').value;
+  TOKEN = pw;
+  fetch('/admin/api/stats', { headers: { 'x-admin-token': TOKEN } })
+    .then(r => {
+      if (r.status === 401) throw new Error('bad');
+      return r.json();
+    })
+    .then(data => {
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('dashboard').style.display = 'block';
+      updateStats(data);
+      loadView('pending');
+    })
+    .catch(() => {
+      document.getElementById('loginError').style.display = 'block';
+    });
+}
+
+function updateStats(data) {
+  document.getElementById('statTotal').textContent = data.total || 0;
+  document.getElementById('statPending').textContent = data.pending || 0;
+  document.getElementById('statApproved').textContent = data.approved || 0;
+  document.getElementById('statRejected').textContent = data.rejected || 0;
+  document.getElementById('pendingCount').textContent = data.pending || 0;
+  const mode = (data.mode || 'review');
+  const badge = document.getElementById('modeBadge');
+  badge.textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
+  badge.className = 'mode-badge mode-' + mode;
+}
+
+function loadView(view, el) {
+  currentView = view;
+  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+  if (el) el.classList.add('active');
+
+  if (view === 'settings') { renderSettings(); return; }
+
+  const url = view === 'all'
+    ? '/admin/api/articles'
+    : `/admin/api/articles?status=${view}`;
+
+  fetch(url, { headers: { 'x-admin-token': TOKEN } })
+    .then(r => r.json())
+    .then(data => {
+      let articles = data.articles || [];
+      if (currentTopic !== 'all') articles = articles.filter(a => a.topic === currentTopic);
+      renderArticles(articles, view);
+    });
+}
+
+function filterByTopic(topic) {
+  currentTopic = topic;
+  loadView(currentView);
+}
+
+function renderArticles(articles, view) {
+  const el = document.getElementById('mainContent');
+  if (!articles.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><h3 class="empty-title">${view === 'pending' ? 'No articles waiting for review' : 'No articles found'}</h3><p class="empty-text">${view === 'pending' ? 'Click "Mine Now" to search for new articles, or check back after the next scheduled run.' : 'Articles will appear here once mined and reviewed.'}</p></div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="filter-bar">
+      <p style="font-size:14px;color:rgba(255,255,255,0.5);">${articles.length} article${articles.length !== 1 ? 's' : ''}</p>
+    </div>
+    <div class="articles-grid">
+      ${articles.map(a => renderCard(a, view)).join('')}
+    </div>`;
+}
+
+function renderCard(a, view) {
+  const isPending = a.status === 'pending';
+  const badgeClass = 'badge-' + (a.type || 'article');
+  const typeLabel = (a.type || 'article').charAt(0).toUpperCase() + (a.type || 'article').slice(1);
+  const actions = isPending ? `
+    <button class="action-btn approve-btn" onclick="approve('${a.id}')">✓ Approve</button>
+    <button class="action-btn reject-btn" onclick="reject('${a.id}')">✗ Reject</button>
+    <a href="${a.url}" target="_blank" class="action-btn view-btn">↗ View</a>` :
+    `<a href="${a.url}" target="_blank" class="action-btn view-btn">↗ View article</a>
+     ${a.status === 'approved' ? `<button class="action-btn reject-btn" onclick="reject('${a.id}')">Remove</button>` : ''}`;
+
+  return `
+    <div class="article-card ${a.status}" id="card-${a.id}">
+      <div>
+        <p class="article-topic">${a.topicIcon || ''} ${a.topicName || a.topic}</p>
+        <p class="article-title">${a.title}</p>
+        <p class="article-excerpt">${a.excerpt}</p>
+        <div class="article-meta">
+          <span class="type-badge ${badgeClass}">${typeLabel}</span>
+          <span class="score-pill">Score: ${a.score}/100</span>
+          <span>${a.source}</span>
+          <span>${new Date(a.minedAt).toLocaleDateString()}</span>
+        </div>
+      </div>
+      <div class="article-actions">${actions}</div>
+    </div>`;
+}
+
+function approve(id) {
+  fetch(`/admin/api/approve/${id}`, { method: 'POST', headers: { 'x-admin-token': TOKEN } })
+    .then(r => r.json())
+    .then(() => {
+      document.getElementById('card-' + id)?.remove();
+      refreshStats();
+      showToast('✅ Article approved and live on site!');
+    });
+}
+
+function reject(id) {
+  fetch(`/admin/api/reject/${id}`, { method: 'POST', headers: { 'x-admin-token': TOKEN } })
+    .then(r => r.json())
+    .then(() => {
+      document.getElementById('card-' + id)?.remove();
+      refreshStats();
+      showToast('🗑️ Article rejected.');
+    });
+}
+
+function triggerMine() {
+  const btn = document.getElementById('mineBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Mining...';
+  fetch('/admin/api/mine', { method: 'POST', headers: { 'x-admin-token': TOKEN } })
+    .then(r => r.json())
+    .then(() => {
+      showToast('⚡ Mining cycle started! New articles will appear in the queue shortly.');
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = '⚡ Mine Now';
+        loadView(currentView);
+        refreshStats();
+      }, 8000);
+    });
+}
+
+function refreshStats() {
+  fetch('/admin/api/stats', { headers: { 'x-admin-token': TOKEN } })
+    .then(r => r.json())
+    .then(updateStats);
+}
+
+function renderSettings() {
+  document.getElementById('mainContent').innerHTML = `
+    <h2 style="font-family:'Playfair Display',serif;font-size:24px;margin-bottom:24px;">Settings</h2>
+    <div class="settings-panel">
+      <div class="setting-row">
+        <div><p class="setting-label">Posting mode</p><p class="setting-desc">Review: team approves before posting. Auto: posts immediately above threshold.</p></div>
+        <div class="setting-control">
+          <select id="settingMode">
+            <option value="review">Review (semi-automatic)</option>
+            <option value="auto">Auto (fully automatic)</option>
+          </select>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div><p class="setting-label">Auto-post threshold</p><p class="setting-desc">Minimum confidence score (0–100) required to auto-post. Anything below goes to review.</p></div>
+        <div class="setting-control" style="display:flex;align-items:center;gap:8px;">
+          <input type="range" min="60" max="100" value="85" id="settingThreshold" oninput="document.getElementById('thresholdVal').textContent=this.value">
+          <span id="thresholdVal" style="font-size:14px;font-weight:600;color:var(--gold);min-width:30px;">85</span>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div><p class="setting-label">Mining interval</p><p class="setting-desc">How often the system automatically searches for new articles. Set in .env file.</p></div>
+        <div><p style="font-size:14px;color:var(--gold);">Every ${4} hours</p><p style="font-size:12px;color:var(--gray);">Change MINE_INTERVAL_HOURS in .env</p></div>
+      </div>
+      <button class="save-btn" onclick="saveSettings()">Save settings</button>
+    </div>`;
+}
+
+function saveSettings() {
+  const mode = document.getElementById('settingMode').value;
+  const threshold = document.getElementById('settingThreshold').value;
+  fetch('/admin/api/settings', {
+    method: 'POST',
+    headers: { 'x-admin-token': TOKEN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode, threshold }),
+  }).then(() => {
+    showToast('✅ Settings saved!');
+    refreshStats();
+  });
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// Auto-refresh stats every 30 seconds
+setInterval(refreshStats, 30000);
+</script>
+</body>
+</html>
