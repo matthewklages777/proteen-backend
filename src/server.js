@@ -11,6 +11,7 @@ const { runMiningCycle } = require('./miner');
 const { buildDailySchedule, getScheduleSummary, DAILY_SCHEDULE, getWebhookStatus } = require('./clipScheduler');
 const { postScheduledSlot } = require('./poster');
 const { runHealthCheck } = require('./monitor');
+const { runDailyVideoPipeline, testPipeline } = require('./videoPipeline');
 const { videoDB, scheduleDB } = require('./videoDatabase');
 
 const app = express();
@@ -241,9 +242,44 @@ cron.schedule('0 5 * * *', async () => {
 // HEALTH MONITOR API
 // ═══════════════════════════════════════════════════════════════════════════
 
-// GET /admin/api/health — run health check on demand
+// // Video pipeline routes
+app.post('/admin/api/video/generate', adminAuth, async (req, res) => {
+app.post('/admin/api/video/generate', adminAuth, async (req, res) => {
+  res.json({ message: 'Video pipeline started.' });
+  runDailyVideoPipeline().catch(err => console.error('[Admin] Pipeline error:', err.message));
+});
+
+app.post('/admin/api/video/test', adminAuth, async (req, res) => {
+  res.json({ message: 'Pipeline test started.' });
+  testPipeline().catch(err => console.error('[Admin] Test error:', err.message));
+});
+
+app.get('/api/video/today', (req, res) => {
+  const { videoDB } = require('./videoDatabase');
+  const video = videoDB.getToday();
+  if (!video) return res.json({ video: null });
+  res.json({ video: { id: video.id, title: video.title, topic: video.topic, date: video.date } });
+});
+  res.json({ message: 'Video pipeline started — check server logs for progress.' });
+  runDailyVideoPipeline().catch(err => console.error('[Admin] Pipeline error:', err.message));
+});
+
+app.post('/admin/api/video/test', adminAuth, async (req, res) => {
+  res.json({ message: 'Pipeline test started — check server logs.' });
+  testPipeline().catch(err => console.error('[Admin] Test error:', err.message));
+});
+
+app.get('/api/video/today', (req, res) => {
+  const { videoDB } = require('./videoDatabase');
+  const video = videoDB.getToday();
+  if (!video) return res.json({ video: null });
+  res.json({ video: { id: video.id, title: video.title, subtitle: video.subtitle, topic: video.topic, topicName: video.topicName, date: video.date, durationSecs: video.durationSecs } });
+});
+GET /admin/api/health — run health check on demand
 app.get('/admin/api/health', adminAuth, async (req, res) => {
-  const result = await runHealthCheck();
+ const { runDailyVideoPipeline, testPipeline } = require('./videoPipeline');
+  const result = await
+  ();
   res.json(result);
 });
 
