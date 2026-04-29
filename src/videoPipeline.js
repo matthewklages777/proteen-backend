@@ -1,4 +1,4 @@
-404: Not Foundrequire('dotenv').config();
+require('dotenv').config();
 const Anthropic = require('@anthropic-ai/sdk');
 const axios = require('axios');
 const fs = require('fs');
