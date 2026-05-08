@@ -1,105 +1,94 @@
 require('dotenv').config();
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('ffmpeg-static');
-const { createCanvas } = require('canvas');
 const fs = require('fs');
 const path = require('path');
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const VIDEO_DIR = path.join(__dirname, '../data/videos');
-const BRAND_BLACK = '#000000';
-const BRAND_GOLD = '#e8b84b';
 
 function ensureVideoDir() {
   if (!fs.existsSync(VIDEO_DIR)) fs.mkdirSync(VIDEO_DIR, { recursive: true });
 }
 
-function wrapText(ctx, text, maxWidth) {
+// Word-wrap a string into lines that fit within maxChars characters.
+function wrapText(text, maxChars) {
   const words = text.split(' ');
   const lines = [];
   let line = '';
   for (const word of words) {
-    const test = line + word + ' ';
-    if (ctx.measureText(test).width > maxWidth && line !== '') {
+    if ((line + ' ' + word).trim().length > maxChars && line !== '') {
       lines.push(line.trim());
-      line = word + ' ';
+      line = word;
     } else {
-      line = test;
+      line = (line + ' ' + word).trim();
     }
   }
-  if (line.trim()) lines.push(line.trim());
+  if (line) lines.push(line);
   return lines;
 }
 
-async function createBrandedFrame(title, topicName, framePath) {
+// Builds a branded SVG frame as a string — no native dependencies.
+function buildSvg(title, topicName) {
   const W = 1080, H = 1920;
-  const canvas = createCanvas(W, H);
-  const ctx = canvas.getContext('2d');
+  const titleLines = wrapText(title, 28);
 
-  // Background
-  ctx.fillStyle = BRAND_BLACK;
-  ctx.fillRect(0, 0, W, H);
+  const titleBlocks = titleLines.map((line, i) =>
+    `<text x="540" y="${1040 + i * 90}" font-family="Georgia, serif" font-size="68" font-weight="bold" fill="#ffffff" text-anchor="middle">${escapeXml(line)}</text>`
+  ).join('\n  ');
 
-  // Top gold bar
-  ctx.fillStyle = BRAND_GOLD;
-  ctx.fillRect(0, 0, W, 12);
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="${W}" height="${H}" fill="#000000"/>
 
-  // ProTeen Nation name
-  ctx.fillStyle = BRAND_GOLD;
-  ctx.font = 'bold 88px serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('ProTeen Nation', W / 2, 200);
+  <!-- Top gold bar -->
+  <rect x="0" y="0" width="${W}" height="12" fill="#e8b84b"/>
 
-  // Tagline
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '44px sans-serif';
-  ctx.fillText('We Are The Future', W / 2, 272);
+  <!-- ProTeen Nation -->
+  <text x="540" y="210" font-family="Georgia, serif" font-size="96" font-weight="bold" fill="#e8b84b" text-anchor="middle">ProTeen Nation</text>
 
-  // Divider
-  ctx.strokeStyle = BRAND_GOLD;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(160, 312);
-  ctx.lineTo(W - 160, 312);
-  ctx.stroke();
+  <!-- Tagline -->
+  <text x="540" y="285" font-family="Arial, sans-serif" font-size="48" fill="#ffffff" text-anchor="middle">We Are The Future</text>
 
-  // Topic label
-  ctx.fillStyle = BRAND_GOLD;
-  ctx.font = 'bold 48px sans-serif';
-  ctx.fillText(topicName.toUpperCase(), W / 2, 920);
+  <!-- Divider -->
+  <line x1="160" y1="320" x2="920" y2="320" stroke="#e8b84b" stroke-width="2"/>
 
-  // Title (word-wrapped)
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 62px serif';
-  const lines = wrapText(ctx, title, 900);
-  const lineHeight = 84;
-  const startY = 1020;
-  lines.forEach((line, i) => {
-    ctx.fillText(line, W / 2, startY + i * lineHeight);
-  });
+  <!-- Topic label -->
+  <text x="540" y="940" font-family="Arial, sans-serif" font-size="52" font-weight="bold" fill="#e8b84b" text-anchor="middle">${escapeXml(topicName.toUpperCase())}</text>
 
-  // Bottom gold bar
-  ctx.fillStyle = BRAND_GOLD;
-  ctx.fillRect(0, H - 12, W, 12);
+  <!-- Speech title -->
+  ${titleBlocks}
 
-  fs.writeFileSync(framePath, canvas.toBuffer('image/png'));
+  <!-- Bottom gold bar -->
+  <rect x="0" y="${H - 12}" width="${W}" height="12" fill="#e8b84b"/>
+</svg>`;
+}
+
+function escapeXml(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
 
 // Renders a full branded MP4 from an ElevenLabs MP3 + video metadata.
-// Returns the local path to the saved MP4 file.
+// Uses SVG → FFmpeg (no canvas/native deps). Returns local MP4 path.
 async function renderVideo(audioPath, videoRecord) {
   ensureVideoDir();
-  const framePath = path.join(VIDEO_DIR, videoRecord.id + '_frame.png');
+  const svgPath = path.join(VIDEO_DIR, videoRecord.id + '_frame.svg');
   const videoPath = path.join(VIDEO_DIR, videoRecord.id + '.mp4');
 
-  console.log('[Renderer] Creating branded frame for:', videoRecord.title);
-  await createBrandedFrame(videoRecord.title, videoRecord.topicName, framePath);
+  console.log('[Renderer] Creating branded SVG frame for:', videoRecord.title);
+  fs.writeFileSync(svgPath, buildSvg(videoRecord.title, videoRecord.topicName));
 
   console.log('[Renderer] Encoding MP4...');
   await new Promise((resolve, reject) => {
     ffmpeg()
-      .input(framePath)
+      .input(svgPath)
       .inputOptions(['-loop 1', '-framerate 1'])
       .input(audioPath)
       .outputOptions([
@@ -109,11 +98,11 @@ async function renderVideo(audioPath, videoRecord) {
         '-b:a 192k',
         '-pix_fmt yuv420p',
         '-shortest',
+        '-vf scale=1080:1920',
       ])
-      .size('1080x1920')
       .output(videoPath)
       .on('end', () => {
-        if (fs.existsSync(framePath)) fs.unlinkSync(framePath);
+        if (fs.existsSync(svgPath)) fs.unlinkSync(svgPath);
         resolve();
       })
       .on('error', (err) => reject(err))
@@ -124,8 +113,7 @@ async function renderVideo(audioPath, videoRecord) {
   return videoPath;
 }
 
-// Trims a clip from an existing MP4 using start/end timestamps.
-// Used to produce 30-second clips for Reels/Shorts posting.
+// Trims a 30-second clip from an existing MP4 using start/end timestamps.
 async function renderClip(fullVideoPath, startSec, endSec, clipId) {
   ensureVideoDir();
   const clipPath = path.join(VIDEO_DIR, clipId + '_clip.mp4');
