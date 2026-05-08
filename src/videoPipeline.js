@@ -5,10 +5,12 @@ const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { videoDB } = require('./videoDatabase');
+const { renderVideo } = require('./videoRenderer');
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'V2bPluzT7MuirpucVAKH';
 const AUDIO_DIR = path.join(__dirname, '../data/audio');
+const BACKEND_URL = process.env.BACKEND_URL || 'https://proteen-backend-production.up.railway.app';
 const TOPIC_ROTATION = [
   { id: 'resilience', name: 'Resilience & Mindset' },
   { id: 'school', name: 'School & Academics' },
@@ -51,7 +53,10 @@ async function runDailyVideoPipeline() {
   const videoId = uuidv4();
   const script = await generateSpeech(topic);
   const audioPath = await generateAudio(script, videoId);
-  const videoRecord = { id: videoId, date: new Date().toISOString().split('T')[0], topic: topic.id, topicName: topic.name, title: script.split('.')[0].slice(0, 60), script, audioPath, status: 'ready', durationSecs: Math.ceil(script.split(' ').length / 2.5), generatedAt: new Date().toISOString(), voiceName: 'Frank', voiceId: ELEVENLABS_VOICE_ID };
+  const title = script.split('.')[0].slice(0, 60);
+  const videoPath = await renderVideo(audioPath, { id: videoId, title, topicName: topic.name });
+  const videoUrl = `${BACKEND_URL}/videos/${videoId}.mp4`;
+  const videoRecord = { id: videoId, date: new Date().toISOString().split('T')[0], topic: topic.id, topicName: topic.name, title, script, audioPath, videoPath, videoUrl, status: 'ready', durationSecs: Math.ceil(script.split(' ').length / 2.5), generatedAt: new Date().toISOString(), voiceName: 'Frank', voiceId: ELEVENLABS_VOICE_ID };
   videoDB.saveVideo(videoRecord);
   console.log('[Pipeline] Video pipeline complete:', videoRecord.title);
   return videoRecord;

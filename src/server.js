@@ -1,5 +1,4 @@
 require('dotenv').config();
-
 const express = require('express');
 const cors = require('cors');
 const cron = require('node-cron');
@@ -20,6 +19,7 @@ const MINE_HOURS = parseInt(process.env.MINE_INTERVAL_HOURS) || 4;
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
+app.use('/videos', express.static(path.join(__dirname, '../data/videos')));
 
 function adminAuth(req, res, next) {
   const token = req.headers['x-admin-token'] || req.query.token;
@@ -211,4 +211,3 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
-

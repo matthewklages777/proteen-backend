@@ -36,6 +36,7 @@ async function postToplatform(platformPost, content) {
     isThirdParty: content.type === 'third_party',
     isOriginal: content.isOriginal || false,
     videoId: content.videoId || content.id,
+    videoUrl: content.videoUrl || null,
     // For clip posts: timestamp range to extract
     clipStartSec: content.estimatedStartSec,
     clipEndSec: content.estimatedEndSec,
