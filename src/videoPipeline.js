@@ -25,7 +25,7 @@ async function generateSpeech(topic) {
   const message = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 1000,
-    messages: [{ role: 'user', content: 'Write a powerful 2-3 minute motivational speech for teenagers about ' + topic.name + '. Open with a bold attention-grabbing line. Speak directly to the teen using you. Be specific and honest. Include one concrete action they can take today. End with a memorable closing line. Return only the speech text, no titles or labels.' }],
+    messages: [{ role: 'user', content: 'Write a powerful 2-3 minute motivational speech for teenagers about ' + topic.name + '. Open with a bold attention-grabbing line. Speak directly to the teen using "you". Be specific and honest. Build emotional momentum — start grounded, rise to passion, pull back to something quiet and real, then finish with fire. Include one concrete action they can take today. Use short punchy sentences for emphasis at peak moments. End with an unforgettable closing line. Return only the speech text, no titles or labels.' }],
   });
   const script = message.content[0].text.trim();
   console.log('[Pipeline] Speech generated', script.split(' ').length, 'words');
@@ -37,7 +37,7 @@ async function generateAudio(script, videoId) {
   const audioPath = path.join(AUDIO_DIR, videoId + '.mp3');
   const response = await axios.post(
     'https://api.elevenlabs.io/v1/text-to-speech/' + ELEVENLABS_VOICE_ID,
-    { text: script, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.65, similarity_boost: 0.85, style: 0.45, use_speaker_boost: true } },
+    { text: script, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.30, similarity_boost: 0.85, style: 0.72, use_speaker_boost: true } },
     { headers: { 'xi-api-key': ELEVENLABS_API_KEY, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' }, responseType: 'arraybuffer', timeout: 60000 }
   );
   fs.writeFileSync(audioPath, response.data);
@@ -54,7 +54,7 @@ async function runDailyVideoPipeline() {
   const script = await generateSpeech(topic);
   const audioPath = await generateAudio(script, videoId);
   const title = script.split('.')[0].slice(0, 60);
-  const videoPath = await renderVideo(audioPath, { id: videoId, title, topicName: topic.name });
+  const videoPath = await renderVideo(audioPath, { id: videoId, title, topic: topic.id, topicName: topic.name });
   const videoUrl = `${BACKEND_URL}/videos/${videoId}.mp4`;
   const videoRecord = { id: videoId, date: new Date().toISOString().split('T')[0], topic: topic.id, topicName: topic.name, title, script, audioPath, videoPath, videoUrl, status: 'ready', durationSecs: Math.ceil(script.split(' ').length / 2.5), generatedAt: new Date().toISOString(), voiceName: 'Frank', voiceId: ELEVENLABS_VOICE_ID };
   videoDB.saveVideo(videoRecord);
