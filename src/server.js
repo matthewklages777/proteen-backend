@@ -234,10 +234,33 @@ function startScheduler() {
 
   console.log('[Monitor] Health checks scheduled every 15 minutes');
 
-  setTimeout(() => {
-    console.log('[Server] Running initial mining cycle...');
-    runMiningCycle().catch(err => console.error('Initial mine failed:', err.message));
-  }, 10000);
+  // Self-heal on startup: re-mine articles and regenerate video if data was wiped
+  setTimeout(async () => {
+    console.log('[Server] Running startup self-heal check...');
+    try {
+      const stats = db.getStats();
+      if (stats.approved < 10) {
+        console.log('[Server] Few approved articles found — running mining cycle...');
+        await runMiningCycle();
+      } else {
+        console.log('[Server] Articles OK:', stats.approved, 'approved');
+      }
+    } catch (err) {
+      console.error('[Server] Startup mining failed:', err.message);
+    }
+    try {
+      const todayVideo = videoDB.getToday();
+      if (!todayVideo) {
+        console.log('[Server] No video for today — running video pipeline...');
+        await runDailyVideoPipeline();
+        console.log('[Server] Startup video generation complete');
+      } else {
+        console.log('[Server] Video OK:', todayVideo.title);
+      }
+    } catch (err) {
+      console.error('[Server] Startup video generation failed:', err.message);
+    }
+  }, 15000);
 }
 
 app.listen(PORT, () => {
