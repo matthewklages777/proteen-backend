@@ -6,7 +6,6 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { videoDB } = require('./videoDatabase');
 const { renderVideo } = require('./videoRenderer');
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'V2bPluzT7MuirpucVAKH';
 const AUDIO_DIR = path.join(__dirname, '../data/audio');
@@ -22,6 +21,10 @@ const TOPIC_ROTATION = [
 ];
 async function generateSpeech(topic) {
   console.log('[Pipeline] Generating speech for topic:', topic.name);
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  console.log('[Pipeline] Anthropic key present:', !!apiKey, '| starts with:', apiKey ? apiKey.slice(0, 10) : 'MISSING');
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY environment variable is not set on Railway. Go to Railway > Variables and add it.');
+  const anthropic = new Anthropic({ apiKey });
   const message = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 1000,
