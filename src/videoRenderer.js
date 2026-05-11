@@ -290,7 +290,8 @@ async function renderVideo(audioPath, videoRecord) {
           '[slides][2:v]overlay=0:0[final]',
         ])
         .outputOptions(['-map [final]', '-map 1:a', '-c:v libx264', '-c:a aac',
-                        '-b:a 192k', '-pix_fmt yuv420p', '-r 25', '-shortest'])
+                        '-b:a 192k', '-pix_fmt yuv420p', '-r 25', '-shortest',
+                        '-movflags +faststart'])
         .output(videoPath)
         .on('end', () => { fs.rmSync(tmpDir, { recursive: true, force: true }); resolve(); })
         .on('error', (err) => { fs.rmSync(tmpDir, { recursive: true, force: true }); reject(err); })
@@ -338,7 +339,8 @@ async function renderStaticFallback(audioPath, videoRecord, videoPath, tmpDir) {
       .input(framePath).inputOptions(['-loop 1', '-framerate 1'])
       .input(audioPath)
       .outputOptions(['-c:v libx264', '-tune stillimage', '-c:a aac',
-                      '-b:a 192k', '-pix_fmt yuv420p', '-shortest', '-vf scale=1080:1920'])
+                      '-b:a 192k', '-pix_fmt yuv420p', '-shortest', '-vf scale=1080:1920',
+                      '-movflags +faststart'])
       .output(videoPath)
       .on('end', () => { fs.rmSync(tmpDir, { recursive: true, force: true }); resolve(); })
       .on('error', (err) => { fs.rmSync(tmpDir, { recursive: true, force: true }); reject(err); })

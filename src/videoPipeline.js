@@ -58,7 +58,8 @@ async function runDailyVideoPipeline() {
   const videoId = uuidv4();
   const script = await generateSpeech(topic);
   const audioPath = await generateAudio(script, videoId);
-  const title = script.split('.')[0].slice(0, 60);
+  const rawTitle = script.split('.')[0].trim();
+  const title = rawTitle.length <= 60 ? rawTitle : rawTitle.slice(0, 60).replace(/\s+\S*$/, '').trim();
   const videoPath = await renderVideo(audioPath, { id: videoId, title, topic: topic.id, topicName: topic.name });
   const videoUrl = `${BACKEND_URL}/videos/${videoId}.mp4`;
   const videoRecord = { id: videoId, date: new Date().toISOString().split('T')[0], topic: topic.id, topicName: topic.name, title, script, audioPath, videoPath, videoUrl, status: 'ready', durationSecs: Math.ceil(script.split(' ').length / 2.5), generatedAt: new Date().toISOString(), voiceName: 'Frank', voiceId: ELEVENLABS_VOICE_ID };
