@@ -161,6 +161,18 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'ProTeen Nation Backend', time: new Date().toISOString() });
 });
 
+app.get('/admin/api/debug-env', adminAuth, (req, res) => {
+  const key = process.env.ANTHROPIC_API_KEY;
+  const elKey = process.env.ELEVENLABS_API_KEY;
+  res.json({
+    ANTHROPIC_API_KEY: key ? `SET (starts: ${key.slice(0,12)}..., length: ${key.length})` : 'NOT SET',
+    ELEVENLABS_API_KEY: elKey ? `SET (starts: ${elKey.slice(0,8)}..., length: ${elKey.length})` : 'NOT SET',
+    PIXABAY_API_KEY: process.env.PIXABAY_API_KEY ? 'SET' : 'NOT SET',
+    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD ? 'SET' : 'NOT SET',
+    allEnvKeys: Object.keys(process.env).filter(k => !k.toLowerCase().includes('path') && !k.toLowerCase().includes('home')).sort(),
+  });
+});
+
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/admin.html'));
 });
