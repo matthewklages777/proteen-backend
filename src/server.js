@@ -161,6 +161,34 @@ app.post('/admin/api/video/generate', adminAuth, async (req, res) => {
   }
 });
 
+app.post('/admin/api/video/generate/:topicId', adminAuth, async (req, res) => {
+  const TOPICS = ['resilience','school','relationships','faith','sports','health','careers'];
+  const topicId = req.params.topicId;
+  const TOPIC_NAMES = { resilience:'Resilience & Mindset', school:'School & Academics', relationships:'Relationships', faith:'Faith & Spirituality', sports:'Sports & Competition', health:'Health & Fitness', careers:'Careers & Ambition' };
+  if (!TOPICS.includes(topicId)) return res.status(400).json({ error: 'Unknown topic. Use: ' + TOPICS.join(', ') });
+  try {
+    const { generateSpeech, generateAudio } = require('./videoPipeline');
+    const { renderVideo } = require('./videoRenderer');
+    const { v4: uuidv4 } = require('uuid');
+    const topic = { id: topicId, name: TOPIC_NAMES[topicId] };
+    const videoId = uuidv4();
+    console.log('[Admin] Generating video for topic:', topic.name);
+    const script = await generateSpeech(topic);
+    const audioPath = await generateAudio(script, videoId);
+    const rawTitle = script.split('.')[0].trim();
+    const title = rawTitle.length <= 60 ? rawTitle : rawTitle.slice(0, 60).replace(/\s+\S*$/, '').trim();
+    const BACKEND_URL = process.env.BACKEND_URL || 'https://proteen-backend-production.up.railway.app';
+    const videoPath = await renderVideo(audioPath, { id: videoId, title, topic: topicId, topicName: topic.name });
+    const videoUrl = `${BACKEND_URL}/videos/${videoId}.mp4`;
+    const videoRecord = { id: videoId, date: new Date().toISOString().split('T')[0], topic: topicId, topicName: topic.name, title, script, audioPath, videoPath, videoUrl, status: 'ready', durationSecs: Math.ceil(script.split(' ').length / 2.5), generatedAt: new Date().toISOString(), voiceName: 'Frank' };
+    videoDB.saveVideo(videoRecord);
+    res.json({ success: true, video: videoRecord });
+  } catch (err) {
+    console.error('[Admin] Topic video error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.post('/admin/api/video/test', adminAuth, async (req, res) => {
   try {
     console.log('[Admin] Starting pipeline test (blocking)...');
