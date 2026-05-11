@@ -19,6 +19,7 @@
     "fluent-ffmpeg": "^2.1.2",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.7",
+    "openai": "^6.37.0",
     "sharp": "^0.34.5",
     "uuid": "^9.0.0"
   },

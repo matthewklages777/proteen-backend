@@ -34,22 +34,44 @@ async function generateSpeech(topic) {
   return script;
 }
 async function generateAudio(script, videoId) {
-  console.log('[Pipeline] Generating audio with ElevenLabs Frank...');
-  const elevenKey = (process.env.ELEVENLABS_API_KEY || '').trim();
-  console.log('[Pipeline] ElevenLabs key present:', !!elevenKey, '| starts with:', elevenKey ? elevenKey.slice(0, 10) : 'MISSING', '| length:', elevenKey.length);
-  if (!elevenKey) throw new Error('ELEVENLABS_API_KEY environment variable is not set on Railway.');
   if (!fs.existsSync(AUDIO_DIR)) fs.mkdirSync(AUDIO_DIR, { recursive: true });
   const audioPath = path.join(AUDIO_DIR, videoId + '.mp3');
-  const response = await axios.post(
-    'https://api.elevenlabs.io/v1/text-to-speech/' + ELEVENLABS_VOICE_ID,
-    { text: script, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.30, similarity_boost: 0.85, style: 0.72, use_speaker_boost: true } },
-    { headers: { 'xi-api-key': elevenKey, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' }, responseType: 'arraybuffer', timeout: 60000 }
-  ).catch(err => {
-    const body = err.response?.data ? Buffer.from(err.response.data).toString('utf8') : '';
-    throw new Error(`ElevenLabs ${err.response?.status}: ${body || err.message}`);
+
+  // Try ElevenLabs first
+  const elevenKey = (process.env.ELEVENLABS_API_KEY || '').trim();
+  if (elevenKey) {
+    try {
+      console.log('[Pipeline] Generating audio with ElevenLabs Frank...');
+      const response = await axios.post(
+        'https://api.elevenlabs.io/v1/text-to-speech/' + ELEVENLABS_VOICE_ID,
+        { text: script, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.30, similarity_boost: 0.85, style: 0.72, use_speaker_boost: true } },
+        { headers: { 'xi-api-key': elevenKey, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' }, responseType: 'arraybuffer', timeout: 60000 }
+      );
+      fs.writeFileSync(audioPath, response.data);
+      console.log('[Pipeline] Audio saved via ElevenLabs:', audioPath);
+      return audioPath;
+    } catch (err) {
+      const body = err.response?.data ? Buffer.from(err.response.data).toString('utf8') : '';
+      console.warn('[Pipeline] ElevenLabs failed:', err.response?.status, body || err.message);
+      console.log('[Pipeline] Falling back to OpenAI TTS...');
+    }
+  }
+
+  // Fallback: OpenAI TTS
+  const openaiKey = (process.env.OPENAI_API_KEY || '').trim();
+  if (!openaiKey) throw new Error('ElevenLabs is out of credits and OPENAI_API_KEY is not set. Add it to Railway variables.');
+  const { OpenAI } = require('openai');
+  const openai = new OpenAI({ apiKey: openaiKey });
+  console.log('[Pipeline] Generating audio with OpenAI TTS (onyx voice)...');
+  const mp3 = await openai.audio.speech.create({
+    model: 'tts-1',
+    voice: 'onyx', // deep, powerful voice — great for motivational content
+    input: script,
+    speed: 1.0,
   });
-  fs.writeFileSync(audioPath, response.data);
-  console.log('[Pipeline] Audio saved:', audioPath);
+  const buffer = Buffer.from(await mp3.arrayBuffer());
+  fs.writeFileSync(audioPath, buffer);
+  console.log('[Pipeline] Audio saved via OpenAI TTS:', audioPath);
   return audioPath;
 }
 async function runDailyVideoPipeline(topicOverride) {
