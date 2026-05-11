@@ -6,7 +6,6 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { videoDB } = require('./videoDatabase');
 const { renderVideo } = require('./videoRenderer');
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'V2bPluzT7MuirpucVAKH';
 const AUDIO_DIR = path.join(__dirname, '../data/audio');
 const BACKEND_URL = process.env.BACKEND_URL || 'https://proteen-backend-production.up.railway.app';
@@ -36,12 +35,15 @@ async function generateSpeech(topic) {
 }
 async function generateAudio(script, videoId) {
   console.log('[Pipeline] Generating audio with ElevenLabs Frank...');
+  const elevenKey = process.env.ELEVENLABS_API_KEY;
+  console.log('[Pipeline] ElevenLabs key present:', !!elevenKey, '| starts with:', elevenKey ? elevenKey.slice(0, 10) : 'MISSING');
+  if (!elevenKey) throw new Error('ELEVENLABS_API_KEY environment variable is not set on Railway.');
   if (!fs.existsSync(AUDIO_DIR)) fs.mkdirSync(AUDIO_DIR, { recursive: true });
   const audioPath = path.join(AUDIO_DIR, videoId + '.mp3');
   const response = await axios.post(
     'https://api.elevenlabs.io/v1/text-to-speech/' + ELEVENLABS_VOICE_ID,
     { text: script, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.30, similarity_boost: 0.85, style: 0.72, use_speaker_boost: true } },
-    { headers: { 'xi-api-key': ELEVENLABS_API_KEY, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' }, responseType: 'arraybuffer', timeout: 60000 }
+    { headers: { 'xi-api-key': elevenKey, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' }, responseType: 'arraybuffer', timeout: 60000 }
   );
   fs.writeFileSync(audioPath, response.data);
   console.log('[Pipeline] Audio saved:', audioPath);
