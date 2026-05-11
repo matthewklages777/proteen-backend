@@ -41,7 +41,7 @@ app.get('/api/articles/:topic', (req, res) => {
 app.get('/api/video/today', (req, res) => {
   const video = videoDB.getToday();
   if (!video) return res.json({ video: null });
-  res.json({ video: { id: video.id, title: video.title, subtitle: video.subtitle, topic: video.topic, topicName: video.topicName, date: video.date, durationSecs: video.durationSecs, caption: video.caption, hashtags: video.hashtags } });
+  res.json({ video: { id: video.id, title: video.title, subtitle: video.subtitle, topic: video.topic, topicName: video.topicName, date: video.date, durationSecs: video.durationSecs, caption: video.caption, hashtags: video.hashtags, videoUrl: video.videoUrl } });
 });
 
 app.get('/admin/api/queue', adminAuth, (req, res) => {
