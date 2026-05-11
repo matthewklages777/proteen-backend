@@ -10,6 +10,7 @@ const { postScheduledSlot } = require('./poster');
 const { videoDB, scheduleDB, quoteDB } = require('./videoDatabase');
 const { runHealthCheck } = require('./monitor');
 const { runDailyVideoPipeline, testPipeline } = require('./videoPipeline');
+const { runClipPipeline } = require('./clipPipeline');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -194,6 +195,17 @@ app.post('/admin/api/video/generate/:topicId', adminAuth, async (req, res) => {
   }
 });
 
+app.post('/admin/api/clips/generate', adminAuth, async (req, res) => {
+  try {
+    const video = videoDB.getToday();
+    if (!video) return res.status(404).json({ error: 'No video for today yet. Generate a video first.' });
+    res.json({ message: 'Clip pipeline started. 6 clips will be cut and posted.' });
+    runClipPipeline(video).catch(err => console.error('[Admin] Clip pipeline error:', err.message));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/admin/api/video/test', adminAuth, async (req, res) => {
   try {
     console.log('[Admin] Starting pipeline test (blocking)...');
@@ -275,14 +287,11 @@ function startScheduler() {
     try {
       const video = await runDailyVideoPipeline();
       console.log('[Scheduler] Video ready:', video.title);
-      // Auto-build posting schedule and trigger social posts
+      // Cut 6 clips and post to Instagram/YouTube/Facebook/X
       try {
-        const archive = videoDB.getArchive(30);
-        const schedule = await buildDailySchedule(video, archive);
-        scheduleDB.saveSchedule(schedule);
-        console.log('[Scheduler] Posting schedule built:', getScheduleSummary(schedule));
-      } catch (schedErr) {
-        console.error('[Scheduler] Schedule build failed:', schedErr.message);
+        await runClipPipeline(video);
+      } catch (clipErr) {
+        console.error('[Scheduler] Clip pipeline failed:', clipErr.message);
       }
     } catch (err) {
       console.error('[Scheduler] Video pipeline failed:', err.message);
