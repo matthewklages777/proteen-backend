@@ -11,10 +11,7 @@ const TOPICS = require('./topics');
 const db = require('./database');
 const { sendReviewEmail } = require('./mailer');
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const MAX_PER_TOPIC = parseInt(process.env.MAX_ARTICLES_PER_TOPIC) || 3;
-const POSTING_MODE = process.env.POSTING_MODE || 'review';
-const AUTO_THRESHOLD = parseInt(process.env.AUTO_POST_THRESHOLD) || 85;
 
 // ── Step 1: Search Tavily for articles on a topic ─────────────────────────
 async function searchArticles(topic, query) {
@@ -85,6 +82,7 @@ Set appropriate=false and score below 60 if the article contains:
 - Anything that could harm teen wellbeing`;
 
   try {
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 500,
@@ -142,7 +140,7 @@ async function runMiningCycle() {
           reason: evaluation.reason,
           source: new URL(result.url).hostname.replace('www.', ''),
           // Auto-post if mode is 'auto' and score is high enough
-          status: (POSTING_MODE === 'auto' && evaluation.score >= AUTO_THRESHOLD)
+          status: (process.env.POSTING_MODE === 'auto' && evaluation.score >= (parseInt(process.env.AUTO_POST_THRESHOLD) || 85))
             ? 'approved'
             : 'pending',
           minedAt: new Date().toISOString(),
@@ -165,7 +163,7 @@ async function runMiningCycle() {
 
   // Send review email if in review mode and we have pending articles
   const pending = newArticles.filter(a => a.status === 'pending');
-  if (POSTING_MODE === 'review' && pending.length > 0) {
+  if (process.env.POSTING_MODE !== 'auto' && pending.length > 0) {
     await sendReviewEmail(pending);
   }
 
