@@ -15,8 +15,14 @@ const { renderClip } = require('./videoRenderer');
 const BACKEND_URL = process.env.BACKEND_URL || 'https://proteen-backend-production.up.railway.app';
 const CLIP_PLATFORMS = ['instagram', 'youtube', 'facebook', 'x']; // TikTok is manual
 
+// Times to post each clip throughout the day (spread for max algorithm reach)
 const POST_TIMES = [
-  '07:30', '09:00', '10:30', '12:00', '15:00', '19:00'
+  '07:30', // Morning commute
+  '09:15', // School start energy
+  '11:45', // Pre-lunch scroll
+  '14:00', // Afternoon slump
+  '16:30', // After school
+  '20:00', // Evening wind-down
 ];
 
 // ── Step 1: Identify the 6 best clip moments ──────────────────────────────
@@ -100,6 +106,17 @@ Include #ProTeenNation #WeAreTheFuture. Return ONLY the caption text.`,
   }
 }
 
+// ── Helper: ms until a given HH:MM time today ─────────────────────────────
+function msUntil(timeStr) {
+  const [h, m] = timeStr.split(':').map(Number);
+  const now = new Date();
+  const target = new Date();
+  target.setHours(h, m, 0, 0);
+  // If time already passed today, schedule for tomorrow
+  if (target <= now) target.setDate(target.getDate() + 1);
+  return target.getTime() - now.getTime();
+}
+
 // ── Step 3: Post clip to a platform via webhook ────────────────────────────
 async function postClip(clipUrl, caption, platform, clip, video, scheduleTime) {
   const webhookUrl = process.env[`WEBHOOK_${platform.toUpperCase()}`];
@@ -147,47 +164,53 @@ async function runClipPipeline(video) {
     return;
   }
 
-  const results = [];
+  // Step 2: Cut all 6 clips now (at 5 AM), schedule posts throughout the day
+  const readyClips = [];
 
   for (let i = 0; i < clipMoments.length; i++) {
     const clip = clipMoments[i];
     const clipId = `${video.id}_clip${i + 1}`;
-    const scheduleTime = POST_TIMES[i] || '12:00';
+    const postTime = POST_TIMES[i] || '12:00';
 
-    // Clamp timestamps to video duration
     const startSec = Math.max(0, Math.floor(clip.startSec || 0));
     const endSec = Math.min(video.durationSecs, Math.ceil(clip.endSec || startSec + 30));
 
-    console.log(`[ClipPipeline] Cutting clip ${i + 1}/6: ${startSec}s — ${endSec}s (${clip.type})`);
+    console.log(`[ClipPipeline] Cutting clip ${i + 1}/6: ${startSec}s–${endSec}s (${clip.type}) → posts at ${postTime}`);
 
-    let clipPath, clipUrl;
     try {
-      clipPath = await renderClip(video.videoPath, startSec, endSec, clipId);
-      clipUrl = `${BACKEND_URL}/videos/${clipId}_clip.mp4`;
+      await renderClip(video.videoPath, startSec, endSec, clipId);
+      const clipUrl = `${BACKEND_URL}/videos/${clipId}_clip.mp4`;
+      readyClips.push({ clip, clipUrl, postTime, index: i + 1 });
       console.log(`[ClipPipeline] Clip ${i + 1} ready: ${clipUrl}`);
     } catch (err) {
       console.error(`[ClipPipeline] Failed to cut clip ${i + 1}:`, err.message);
-      continue;
-    }
-
-    // Post to each platform with a platform-specific caption
-    for (const platform of CLIP_PLATFORMS) {
-      const caption = await generateCaption(clip, platform, video);
-      const result = await postClip(clipUrl, caption, platform, clip, video, scheduleTime);
-      results.push({ clip: i + 1, platform, ...result });
-      // Small stagger between posts
-      await new Promise(r => setTimeout(r, 2000));
     }
   }
 
-  const succeeded = results.filter(r => r.success).length;
-  console.log(`\n[ClipPipeline] Done. ${succeeded}/${results.length} posts sent across all platforms.`);
-  console.log('[ClipPipeline] TikTok clips are at:');
-  for (let i = 0; i < clipMoments.length; i++) {
-    console.log(`  Clip ${i + 1}: ${BACKEND_URL}/videos/${video.id}_clip${i + 1}_clip.mp4`);
+  console.log(`[ClipPipeline] All ${readyClips.length} clips cut. Scheduling posts throughout the day...`);
+
+  // Step 3: Schedule each clip to post at its designated time
+  for (const { clip, clipUrl, postTime, index } of readyClips) {
+    const delay = msUntil(postTime);
+    const delayMins = Math.round(delay / 60000);
+    console.log(`[ClipPipeline] Clip ${index} (${clip.type}) scheduled for ${postTime} — in ${delayMins} minutes`);
+
+    setTimeout(async () => {
+      console.log(`[ClipPipeline] Posting clip ${index} at ${postTime}...`);
+      for (const platform of CLIP_PLATFORMS) {
+        const caption = await generateCaption(clip, platform, video);
+        await postClip(clipUrl, caption, platform, clip, video, postTime);
+        await new Promise(r => setTimeout(r, 2000)); // stagger between platforms
+      }
+      console.log(`[ClipPipeline] Clip ${index} posted to all platforms.`);
+    }, delay);
   }
 
-  return results;
+  console.log(`[ClipPipeline] Schedule set. Clips will post at: ${readyClips.map(c => c.postTime).join(', ')}`);
+  console.log('[ClipPipeline] TikTok — download these clips manually:');
+  readyClips.forEach(({ clipUrl, index }) => console.log(`  Clip ${index}: ${clipUrl}`));
+
+  return readyClips.map(c => ({ clip: c.index, postTime: c.postTime, url: c.clipUrl }));
 }
 
 module.exports = { runClipPipeline };
