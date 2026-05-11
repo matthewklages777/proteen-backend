@@ -132,6 +132,12 @@ app.get('/admin/api/videos', adminAuth, (req, res) => {
 
 app.post('/admin/api/video/generate', adminAuth, async (req, res) => {
   try {
+    const force = req.query.force === 'true' || req.body.force === true;
+    if (force) {
+      const today = new Date().toISOString().split('T')[0];
+      videoDB.deleteByDate(today);
+      console.log('[Admin] Force flag set — deleted existing video for today');
+    }
     console.log('[Admin] Starting video pipeline (blocking)...');
     const video = await runDailyVideoPipeline();
     res.json({ success: true, video });

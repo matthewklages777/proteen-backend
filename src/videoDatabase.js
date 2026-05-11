@@ -73,6 +73,14 @@ const videoDB = {
     initFile(VIDEOS_DB, { videos: [] });
     return readFile(VIDEOS_DB).videos;
   },
+
+  // Delete video(s) by date — used for force-regenerate
+  deleteByDate(date) {
+    initFile(VIDEOS_DB, { videos: [] });
+    const data = readFile(VIDEOS_DB);
+    data.videos = data.videos.filter(v => v.date !== date);
+    writeFile(VIDEOS_DB, data);
+  },
 };
 
 const scheduleDB = {
