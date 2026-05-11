@@ -251,6 +251,15 @@ function startScheduler() {
     try {
       const video = await runDailyVideoPipeline();
       console.log('[Scheduler] Video ready:', video.title);
+      // Auto-build posting schedule and trigger social posts
+      try {
+        const archive = videoDB.getArchive(30);
+        const schedule = await buildDailySchedule(video, archive);
+        scheduleDB.saveSchedule(schedule);
+        console.log('[Scheduler] Posting schedule built:', getScheduleSummary(schedule));
+      } catch (schedErr) {
+        console.error('[Scheduler] Schedule build failed:', schedErr.message);
+      }
     } catch (err) {
       console.error('[Scheduler] Video pipeline failed:', err.message);
     }
