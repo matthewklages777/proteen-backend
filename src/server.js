@@ -92,6 +92,19 @@ app.post('/admin/api/mine', adminAuth, async (req, res) => {
   runMiningCycle().catch(err => console.error('[Admin] Mining error:', err.message));
 });
 
+app.post('/admin/api/approve-pending', adminAuth, (req, res) => {
+  const threshold = parseInt(req.query.threshold) || 75;
+  const articles = db.getArticles({ status: 'pending' });
+  let approved = 0;
+  articles.forEach(a => {
+    if ((a.score || 0) >= threshold) {
+      db.updateArticle(a.id, { status: 'approved', approvedAt: new Date().toISOString() });
+      approved++;
+    }
+  });
+  res.json({ success: true, approved, total: articles.length, threshold });
+});
+
 app.get('/admin/api/schedule/today', adminAuth, (req, res) => {
   const schedule = scheduleDB.getToday();
   const stats = scheduleDB.getStats();
