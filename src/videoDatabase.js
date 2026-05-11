@@ -6,6 +6,7 @@ const path = require('path');
 
 const VIDEOS_DB = path.join(__dirname, '../data/videos.json');
 const SCHEDULE_DB = path.join(__dirname, '../data/schedule.json');
+const QUOTES_DB = path.join(__dirname, '../data/quotes.json');
 
 function initFile(filePath, defaultData) {
   const dir = path.dirname(filePath);
@@ -144,4 +145,21 @@ const scheduleDB = {
   },
 };
 
-module.exports = { videoDB, scheduleDB };
+const quoteDB = {
+  saveQuote(quote) {
+    initFile(QUOTES_DB, { quotes: [] });
+    const data = readFile(QUOTES_DB);
+    data.quotes.unshift(quote);
+    if (data.quotes.length > 365) data.quotes = data.quotes.slice(0, 365);
+    writeFile(QUOTES_DB, data);
+    return quote;
+  },
+  getToday() {
+    initFile(QUOTES_DB, { quotes: [] });
+    const data = readFile(QUOTES_DB);
+    const today = new Date().toISOString().split('T')[0];
+    return data.quotes.find(q => q.date === today) || null;
+  },
+};
+
+module.exports = { videoDB, scheduleDB, quoteDB };

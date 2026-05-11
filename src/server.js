@@ -7,7 +7,7 @@ const db = require('./database');
 const { runMiningCycle } = require('./miner');
 const { buildDailySchedule, getScheduleSummary, DAILY_SCHEDULE, getWebhookStatus } = require('./clipScheduler');
 const { postScheduledSlot } = require('./poster');
-const { videoDB, scheduleDB } = require('./videoDatabase');
+const { videoDB, scheduleDB, quoteDB } = require('./videoDatabase');
 const { runHealthCheck } = require('./monitor');
 const { runDailyVideoPipeline, testPipeline } = require('./videoPipeline');
 
@@ -36,6 +36,11 @@ app.get('/api/articles', (req, res) => {
 app.get('/api/articles/:topic', (req, res) => {
   const articles = db.getArticles({ status: 'approved', topic: req.params.topic });
   res.json({ articles, count: articles.length, topic: req.params.topic });
+});
+
+app.get('/api/quote/today', (req, res) => {
+  const quote = quoteDB.getToday();
+  res.json({ quote: quote || null });
 });
 
 app.get('/api/video/today', (req, res) => {
@@ -246,6 +251,25 @@ function startScheduler() {
     }
   });
 
+  // Generate daily quote at 6 AM
+  cron.schedule('0 6 * * *', async () => {
+    console.log('[Scheduler] Generating daily quote...');
+    try {
+      const Anthropic = require('@anthropic-ai/sdk');
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const msg = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 120,
+        messages: [{ role: 'user', content: 'Write one short powerful quote (under 20 words) specifically for teenagers about growth, resilience, or potential. Make it original, not a famous quote. Return ONLY a JSON object like: {"text":"quote here","author":"ProTeen Nation"}' }],
+      });
+      const parsed = JSON.parse(msg.content[0].text.trim());
+      quoteDB.saveQuote({ ...parsed, date: new Date().toISOString().split('T')[0], generatedAt: new Date().toISOString() });
+      console.log('[Scheduler] Daily quote saved:', parsed.text);
+    } catch (err) {
+      console.error('[Scheduler] Quote generation failed:', err.message);
+    }
+  });
+
   cron.schedule('0 5 * * *', async () => {
     console.log('[Scheduler] Running daily video pipeline...');
     try {
@@ -285,6 +309,23 @@ function startScheduler() {
       }
     } catch (err) {
       console.error('[Server] Startup mining failed:', err.message);
+    }
+    try {
+      const todayQuote = quoteDB.getToday();
+      if (!todayQuote) {
+        const Anthropic = require('@anthropic-ai/sdk');
+        const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+        const msg = await anthropic.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 120,
+          messages: [{ role: 'user', content: 'Write one short powerful quote (under 20 words) specifically for teenagers about growth, resilience, or potential. Make it original, not a famous quote. Return ONLY a JSON object like: {"text":"quote here","author":"ProTeen Nation"}' }],
+        });
+        const parsed = JSON.parse(msg.content[0].text.trim());
+        quoteDB.saveQuote({ ...parsed, date: new Date().toISOString().split('T')[0], generatedAt: new Date().toISOString() });
+        console.log('[Server] Startup quote generated:', parsed.text);
+      }
+    } catch (err) {
+      console.error('[Server] Startup quote generation failed:', err.message);
     }
     try {
       const todayVideo = videoDB.getToday();
