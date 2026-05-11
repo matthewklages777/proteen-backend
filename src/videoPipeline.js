@@ -35,8 +35,8 @@ async function generateSpeech(topic) {
 }
 async function generateAudio(script, videoId) {
   console.log('[Pipeline] Generating audio with ElevenLabs Frank...');
-  const elevenKey = process.env.ELEVENLABS_API_KEY;
-  console.log('[Pipeline] ElevenLabs key present:', !!elevenKey, '| starts with:', elevenKey ? elevenKey.slice(0, 10) : 'MISSING');
+  const elevenKey = (process.env.ELEVENLABS_API_KEY || '').trim();
+  console.log('[Pipeline] ElevenLabs key present:', !!elevenKey, '| starts with:', elevenKey ? elevenKey.slice(0, 10) : 'MISSING', '| length:', elevenKey.length);
   if (!elevenKey) throw new Error('ELEVENLABS_API_KEY environment variable is not set on Railway.');
   if (!fs.existsSync(AUDIO_DIR)) fs.mkdirSync(AUDIO_DIR, { recursive: true });
   const audioPath = path.join(AUDIO_DIR, videoId + '.mp3');
@@ -44,7 +44,10 @@ async function generateAudio(script, videoId) {
     'https://api.elevenlabs.io/v1/text-to-speech/' + ELEVENLABS_VOICE_ID,
     { text: script, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.30, similarity_boost: 0.85, style: 0.72, use_speaker_boost: true } },
     { headers: { 'xi-api-key': elevenKey, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' }, responseType: 'arraybuffer', timeout: 60000 }
-  );
+  ).catch(err => {
+    const body = err.response?.data ? Buffer.from(err.response.data).toString('utf8') : '';
+    throw new Error(`ElevenLabs ${err.response?.status}: ${body || err.message}`);
+  });
   fs.writeFileSync(audioPath, response.data);
   console.log('[Pipeline] Audio saved:', audioPath);
   return audioPath;
