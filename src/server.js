@@ -131,13 +131,25 @@ app.get('/admin/api/videos', adminAuth, (req, res) => {
 });
 
 app.post('/admin/api/video/generate', adminAuth, async (req, res) => {
-  res.json({ message: 'Video pipeline started.' });
-  runDailyVideoPipeline().catch(err => console.error('[Admin] Pipeline error:', err.message));
+  try {
+    console.log('[Admin] Starting video pipeline (blocking)...');
+    const video = await runDailyVideoPipeline();
+    res.json({ success: true, video });
+  } catch (err) {
+    console.error('[Admin] Pipeline error:', err.message, err.stack);
+    res.status(500).json({ success: false, error: err.message, stack: err.stack });
+  }
 });
 
 app.post('/admin/api/video/test', adminAuth, async (req, res) => {
-  res.json({ message: 'Pipeline test started.' });
-  testPipeline().catch(err => console.error('[Admin] Test error:', err.message));
+  try {
+    console.log('[Admin] Starting pipeline test (blocking)...');
+    await testPipeline();
+    res.json({ success: true, message: 'Pipeline test complete — check server logs.' });
+  } catch (err) {
+    console.error('[Admin] Test error:', err.message, err.stack);
+    res.status(500).json({ success: false, error: err.message, stack: err.stack });
+  }
 });
 
 app.get('/admin/api/health', adminAuth, async (req, res) => {
