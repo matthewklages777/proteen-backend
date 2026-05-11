@@ -49,12 +49,16 @@ async function generateAudio(script, videoId) {
   console.log('[Pipeline] Audio saved:', audioPath);
   return audioPath;
 }
-async function runDailyVideoPipeline() {
+async function runDailyVideoPipeline(topicOverride) {
   console.log('[Pipeline] Starting daily video pipeline at', new Date().toLocaleString());
-  const existing = videoDB.getToday();
-  if (existing) { console.log('[Pipeline] Today video already exists:', existing.title); return existing; }
   const dayIndex = new Date().getDay();
-  const topic = TOPIC_ROTATION[dayIndex % TOPIC_ROTATION.length];
+  const topic = topicOverride
+    ? (TOPIC_ROTATION.find(t => t.id === topicOverride) || TOPIC_ROTATION[dayIndex % TOPIC_ROTATION.length])
+    : TOPIC_ROTATION[dayIndex % TOPIC_ROTATION.length];
+  if (!topicOverride) {
+    const existing = videoDB.getToday();
+    if (existing) { console.log('[Pipeline] Today video already exists:', existing.title); return existing; }
+  }
   const videoId = uuidv4();
   const script = await generateSpeech(topic);
   const audioPath = await generateAudio(script, videoId);
