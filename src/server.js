@@ -261,6 +261,29 @@ app.post('/admin/api/scholarships/mine', adminAuth, async (req, res) => {
   }
 });
 
+app.get('/admin/api/scholarships/test-sources', adminAuth, async (req, res) => {
+  const axios = require('axios');
+  const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36';
+  const results = {};
+  // Test Google News RSS
+  try {
+    const r = await axios.get('https://news.google.com/rss/search?q=scholarship+2026+high+school&hl=en-US&gl=US&ceid=US:en', { timeout: 10000, headers: { 'User-Agent': UA } });
+    const count = (r.data.match(/<item>/g) || []).length;
+    results.googleRSS = { ok: true, items: count, sample: r.data.slice(0, 300) };
+  } catch (e) { results.googleRSS = { ok: false, error: e.message }; }
+  // Test DuckDuckGo
+  try {
+    const r = await axios.post('https://html.duckduckgo.com/html/', 'q=scholarship+2026+high+school+apply', { timeout: 10000, headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': UA } });
+    results.duckduckgo = { ok: true, length: r.data.length, hasResults: r.data.includes('result__a') };
+  } catch (e) { results.duckduckgo = { ok: false, error: e.message }; }
+  // Test direct page
+  try {
+    const r = await axios.get('https://studentscholarships.org/scholarships_for_high_school_students.php', { timeout: 10000, headers: { 'User-Agent': UA } });
+    results.directPage = { ok: true, length: r.data.length, sample: r.data.replace(/<[^>]+>/g,' ').slice(0,400) };
+  } catch (e) { results.directPage = { ok: false, error: e.message }; }
+  res.json(results);
+});
+
 app.get('/admin/api/scholarships/test-tavily', adminAuth, async (req, res) => {
   const axios = require('axios');
   const apiKey = process.env.TAVILY_API_KEY;
