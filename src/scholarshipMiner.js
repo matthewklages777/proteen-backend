@@ -127,38 +127,38 @@ async function extractScholarships(results) {
     `--- Item ${i+1} ---\nTitle: ${r.title}\nURL: ${r.url}\nContent: ${r.content.slice(0, 600)}`
   ).join('\n\n');
 
-  const prompt = `You are a scholarship researcher for ProTeen Nation, a platform for teenagers.
+  const prompt = `You are a scholarship researcher for ProTeen Nation, a platform for teenagers aged 13-19.
 
-Analyze these web results and extract any scholarship, grant, fellowship, award, or contest opportunities that high school students can apply for.
+Below are news headlines and web results about scholarships. Extract EVERY scholarship, grant, fellowship, award, or contest that teens or high school students could apply for. Even if the info is partial (from a news headline), include it — we want to surface opportunities.
 
 ${itemText}
 
-For EACH real scholarship/grant/contest opportunity found, return a JSON object. Return ONLY a JSON array (may be empty [] if none found):
+Return ONLY a valid JSON array. Include an entry for each scholarship/opportunity mentioned. Empty array [] only if there are truly zero opportunities:
 [
   {
-    "name": "Full official scholarship name",
-    "provider": "Organization offering it",
+    "name": "Official scholarship name (infer from headline if needed)",
+    "provider": "Organization or company offering it",
     "type": "scholarship",
     "amount": "$5,000",
     "amountNum": 5000,
     "deadline": "June 15, 2026",
     "deadlineISO": "2026-06-15",
-    "eligibility": "High school students, GPA 3.0+",
-    "description": "Brief description under 180 chars",
-    "url": "direct application or info URL",
+    "eligibility": "Who can apply (1 sentence)",
+    "description": "What it is (1-2 sentences, under 180 chars)",
+    "url": "Best URL for more info or to apply",
     "topics": ["general"]
   }
 ]
 
 Rules:
-- Only include opportunities students can actually apply for (not just news about past winners)
-- type must be "scholarship", "grant", or "contest"
-- If amount unknown use "Varies" and amountNum 0
-- If deadline unknown use null for both deadline fields
-- topics options: stem, arts, sports, community, leadership, writing, general, minority, first-gen, faith
-- If a page lists multiple scholarships, include each one as a separate item
-- Keep eligibility under 150 chars, description under 180 chars
-- URL should be the most direct link to apply or learn more`;
+- Be GENEROUS — include anything that sounds like a student funding opportunity
+- Do NOT include past winners announcements (e.g. "Student wins $10K scholarship" — that's past tense)
+- type: "scholarship" (merit/need based), "grant" (project/org funding), or "contest" (competition with prize)
+- amount: use "$X,XXX" format or "Varies" if unknown; amountNum is the integer (0 if unknown)
+- deadline: use null if not mentioned
+- topics: stem, arts, sports, community, leadership, writing, general, minority, first-gen, faith
+- url: use the article/source URL if no direct application link is available
+- Keep eligibility ≤150 chars, description ≤180 chars`;
 
   try {
     const msg = await anthropic.messages.create({
@@ -198,10 +198,10 @@ async function runScholarshipMiner() {
 
   let totalSaved = 0;
 
-  // Pick 2 random RSS queries, 1 DDG query, and 2 direct pages per run
-  const rssQueries  = RSS_QUERIES.sort(() => Math.random() - 0.5).slice(0, 2);
-  const ddgQueries  = DDG_QUERIES.sort(() => Math.random() - 0.5).slice(0, 1);
-  const directPages = DIRECT_PAGES.sort(() => Math.random() - 0.5).slice(0, 2);
+  // Pick 3 RSS queries and 2 DDG queries per run (direct pages blocked by 403)
+  const rssQueries  = RSS_QUERIES.sort(() => Math.random() - 0.5).slice(0, 3);
+  const ddgQueries  = DDG_QUERIES.sort(() => Math.random() - 0.5).slice(0, 2);
+  const directPages = []; // Direct pages return 403 from Railway
 
   // Gather all raw results
   const allResults = [];

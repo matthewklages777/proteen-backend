@@ -284,6 +284,35 @@ app.get('/admin/api/scholarships/test-sources', adminAuth, async (req, res) => {
   res.json(results);
 });
 
+app.get('/admin/api/scholarships/test-extraction', adminAuth, async (req, res) => {
+  try {
+    const axios = require('axios');
+    const Anthropic = require('@anthropic-ai/sdk');
+    const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36';
+    // Fetch a few RSS items
+    const rssRes = await axios.get('https://news.google.com/rss/search?q=scholarship+2026+high+school+apply&hl=en-US&gl=US&ceid=US:en', { timeout: 10000, headers: { 'User-Agent': UA } });
+    const items = [];
+    const re = /<item>([\s\S]*?)<\/item>/g;
+    let m;
+    while ((m = re.exec(rssRes.data)) !== null && items.length < 5) {
+      const b = m[1];
+      const title = b.match(/<title><!\[CDATA\[(.*?)\]\]>/)?.[1] || b.match(/<title>(.*?)<\/title>/)?.[1] || '';
+      const link  = b.match(/<link>(.*?)<\/link>/)?.[1] || '';
+      const desc  = b.match(/<description><!\[CDATA\[(.*?)\]\]>/)?.[1] || '';
+      if (title) items.push({ title: title.replace(/<[^>]+>/g,'').trim(), url: link.trim(), content: desc.replace(/<[^>]+>/g,'').trim().slice(0,300) });
+    }
+    // Run Claude extraction
+    const { runScholarshipMiner } = require('./scholarshipMiner');
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const itemText = items.map((r,i) => `--- Item ${i+1} ---\nTitle: ${r.title}\nURL: ${r.url}\nContent: ${r.content}`).join('\n\n');
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001', max_tokens: 1000,
+      messages: [{ role: 'user', content: `Extract scholarships from these items as JSON array:\n${itemText}\nReturn only JSON array.` }],
+    });
+    res.json({ rssItems: items, claudeRaw: msg.content[0].text.slice(0, 1000) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/admin/api/scholarships/test-tavily', adminAuth, async (req, res) => {
   const axios = require('axios');
   const apiKey = process.env.TAVILY_API_KEY;
