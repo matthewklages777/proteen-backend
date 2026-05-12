@@ -75,7 +75,7 @@ Extract the details and return ONLY valid JSON in this exact format:
 }
 
 Rules:
-- isScholarship must be false if this is NOT actually a scholarship/grant/contest for students
+- isScholarship should be true for scholarships, grants, fellowships, awards, contests, or any financial opportunity for students. Only set false if it's completely unrelated (e.g. a news article about someone who won a scholarship, not an opportunity to apply).
 - type must be exactly "scholarship", "grant", or "contest"
 - If deadline is unknown, use null for both deadline fields
 - amountNum should be the numeric value (e.g. 5000 for $5,000), or 0 if unknown
@@ -121,7 +121,10 @@ async function runScholarshipMiner() {
 
       found++;
       const data = await extractScholarship(result);
-      if (!data) continue;
+      if (!data) {
+        console.log('[ScholarshipMiner] Skipped (not a scholarship):', result.title?.slice(0, 60));
+        continue;
+      }
 
       // Skip if deadline already passed
       if (data.deadlineISO && data.deadlineISO < today) {

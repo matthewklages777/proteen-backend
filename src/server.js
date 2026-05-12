@@ -247,8 +247,18 @@ app.post('/admin/api/clips/generate', adminAuth, async (req, res) => {
 
 // Scholarship admin endpoints
 app.post('/admin/api/scholarships/mine', adminAuth, async (req, res) => {
-  res.json({ message: 'Scholarship mining started. Results will appear in /api/scholarships shortly.' });
-  runScholarshipMiner().catch(err => console.error('[Admin] Scholarship miner error:', err.message));
+  const sync = req.query.sync === 'true';
+  if (sync) {
+    try {
+      const result = await runScholarshipMiner();
+      res.json({ success: true, result, stats: scholarshipDB.getStats() });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  } else {
+    res.json({ message: 'Scholarship mining started. Results will appear in /api/scholarships shortly.' });
+    runScholarshipMiner().catch(err => console.error('[Admin] Scholarship miner error:', err.message));
+  }
 });
 
 app.get('/admin/api/scholarships', adminAuth, (req, res) => {
