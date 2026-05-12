@@ -350,13 +350,32 @@ async function renderStaticFallback(audioPath, videoRecord, videoPath, tmpDir) {
 
 async function renderClip(fullVideoPath, startSec, endSec, clipId) {
   const clipPath = path.join(VIDEO_DIR, clipId + '_clip.mp4');
+
+  // Burn watermark into clips so every share drives traffic back
+  // drawtext: top-left "@ProTeenNation", bottom-center "proteennation.com"
+  const fontcolor = 'white@0.85';
+  const shadowcolor = 'black@0.6';
+  const shadow = ':shadowx=2:shadowy=2';
+
+  const watermarkFilter = [
+    // Top-left brand handle
+    `drawtext=text='@ProTeenNation':fontsize=38:fontcolor=${fontcolor}:shadowcolor=${shadowcolor}${shadow}:x=28:y=28:font=Arial`,
+    // Bottom-center CTA
+    `drawtext=text='proteennation.com':fontsize=32:fontcolor=${fontcolor}:shadowcolor=${shadowcolor}${shadow}:x=(w-text_w)/2:y=h-56:font=Arial`,
+  ].join(',');
+
   await new Promise((resolve, reject) => {
     ffmpeg(fullVideoPath)
       .setStartTime(startSec).setDuration(endSec - startSec)
-      .outputOptions(['-c copy']).output(clipPath)
-      .on('end', resolve).on('error', (err) => reject(err)).run();
+      .videoFilter(watermarkFilter)
+      .outputOptions(['-c:v libx264', '-c:a aac', '-b:a 192k', '-pix_fmt yuv420p',
+                      '-r 25', '-movflags +faststart'])
+      .output(clipPath)
+      .on('end', resolve)
+      .on('error', (err) => reject(err))
+      .run();
   });
-  console.log('[Renderer] Clip saved:', clipPath);
+  console.log('[Renderer] Clip saved with watermark:', clipPath);
   return clipPath;
 }
 

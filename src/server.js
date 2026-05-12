@@ -39,6 +39,18 @@ app.get('/api/articles/:topic', (req, res) => {
   res.json({ articles, count: articles.length, topic: req.params.topic });
 });
 
+// Public archive — all videos, optionally filtered by topic
+app.get('/api/videos', (req, res) => {
+  const { topic, limit } = req.query;
+  let videos = videoDB.getAllVideos().map(v => ({
+    id: v.id, title: v.title, topic: v.topic, topicName: v.topicName,
+    date: v.date, durationSecs: v.durationSecs, videoUrl: v.videoUrl,
+  }));
+  if (topic) videos = videos.filter(v => v.topic === topic);
+  if (limit) videos = videos.slice(0, parseInt(limit));
+  res.json({ videos, count: videos.length });
+});
+
 app.get('/api/quote/today', (req, res) => {
   const quote = quoteDB.getToday();
   res.json({ quote: quote || null });
