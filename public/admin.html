@@ -142,6 +142,7 @@
       </div>
       <div class="sidebar-item" onclick="loadView('approved', this)">✅ Approved</div>
       <div class="sidebar-item" onclick="loadView('all', this)">📋 All articles</div>
+      <div class="sidebar-item" onclick="loadView('video', this)">🎬 Daily Video</div>
       <div class="sidebar-item" onclick="loadView('settings', this)">⚙️ Settings</div>
 
       <p class="sidebar-title" style="margin-top:24px;">Topics</p>
@@ -206,6 +207,7 @@ function loadView(view, el) {
   if (el) el.classList.add('active');
 
   if (view === 'settings') { renderSettings(); return; }
+  if (view === 'video')    { renderVideoPanel(); return; }
 
   const url = view === 'all'
     ? '/admin/api/articles'
@@ -310,6 +312,116 @@ function refreshStats() {
   fetch('/admin/api/stats', { headers: { 'x-admin-token': TOKEN } })
     .then(r => r.json())
     .then(updateStats);
+}
+
+function renderVideoPanel() {
+  const content = document.getElementById('mainContent');
+  content.innerHTML = `<h2 style="font-family:'Playfair Display',serif;font-size:24px;margin-bottom:6px;">🎬 Daily Video</h2>
+    <p style="color:var(--gray);font-size:14px;margin-bottom:28px;">Today's video and clip download links. Files are available until the next Railway redeploy — download same-day.</p>
+    <div id="videoPanelBody"><div class="empty-state"><div class="empty-icon">⏳</div><h3 class="empty-title">Loading...</h3></div></div>`;
+
+  fetch('/api/video/today')
+    .then(r => r.json())
+    .then(data => {
+      const panel = document.getElementById('videoPanelBody');
+      if (!data.video) {
+        panel.innerHTML = `
+          <div style="background:var(--black2);border-radius:12px;padding:32px;text-align:center;border:0.5px solid rgba(255,255,255,0.07);">
+            <div style="font-size:48px;margin-bottom:16px;">📭</div>
+            <h3 style="margin-bottom:10px;">No video generated yet today</h3>
+            <p style="color:var(--gray);font-size:14px;margin-bottom:20px;">Generate one now or wait for the 5 AM cron job.</p>
+            <button onclick="generateVideo()" style="background:var(--gold);color:#000;border:none;padding:10px 24px;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer;">⚡ Generate Now</button>
+          </div>`;
+        return;
+      }
+
+      const v = data.video;
+      const id = v.id;
+      const BACKEND = window.location.origin;
+      const clips = [1,2,3,4,5,6].map(i => ({
+        num: i,
+        url: `${BACKEND}/videos/${id}_clip${i}_clip.mp4`,
+        label: ['Hook','Lesson','Quote','Challenge','Emotional Peak','Closing'][i-1],
+      }));
+
+      const d = new Date(v.date);
+      const dateStr = d.toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric', year:'numeric'});
+      const mins = Math.floor((v.durationSecs||0) / 60);
+      const secs = (v.durationSecs||0) % 60;
+
+      panel.innerHTML = `
+        <!-- Today's full video -->
+        <div style="background:var(--black2);border-radius:14px;padding:24px;margin-bottom:24px;border:0.5px solid rgba(232,184,75,0.2);">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
+            <div>
+              <p style="font-size:11px;color:var(--gold);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px;">${v.topicName} · ${dateStr}</p>
+              <h3 style="font-family:'Playfair Display',serif;font-size:20px;line-height:1.3;">"${v.title}"</h3>
+              <p style="font-size:13px;color:var(--gray);margin-top:6px;">${mins}m ${secs < 10 ? '0'+secs : secs}s · OpenAI TTS (onyx)</p>
+            </div>
+            <a href="${BACKEND}/videos/${id}.mp4" download="proteen-daily-${v.date}.mp4"
+               style="background:var(--gold);color:#000;padding:10px 20px;border-radius:8px;font-weight:600;font-size:13px;text-decoration:none;white-space:nowrap;">
+              ⬇ Download Full Video
+            </a>
+          </div>
+          <video src="${BACKEND}/videos/${id}.mp4" controls playsinline
+                 style="width:100%;max-height:220px;border-radius:8px;background:#000;display:block;"></video>
+        </div>
+
+        <!-- Clip download links -->
+        <div style="background:var(--black2);border-radius:14px;padding:24px;border:0.5px solid rgba(255,255,255,0.07);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+            <div>
+              <h3 style="font-size:17px;font-weight:600;margin-bottom:4px;">📲 Today's Clips</h3>
+              <p style="font-size:13px;color:var(--gray);">30-second clips ready for TikTok &amp; X. Watermarked with @ProTeenNation.</p>
+            </div>
+            <button onclick="generateClips()" style="background:rgba(232,184,75,0.15);color:var(--gold);border:1px solid rgba(232,184,75,0.3);padding:9px 18px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">
+              ✂️ Re-cut Clips
+            </button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            ${clips.map(c => `
+              <div style="background:var(--black3);border-radius:10px;padding:16px;display:flex;justify-content:space-between;align-items:center;border:0.5px solid rgba(255,255,255,0.06);">
+                <div>
+                  <p style="font-size:13px;font-weight:600;margin-bottom:3px;">Clip ${c.num} — ${c.label}</p>
+                  <p style="font-size:11px;color:var(--gray);">30 seconds · 9:16 vertical</p>
+                </div>
+                <a href="${c.url}" download="proteen-clip${c.num}-${v.date}.mp4"
+                   style="background:var(--gold);color:#000;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;white-space:nowrap;">
+                  ⬇ Download
+                </a>
+              </div>`).join('')}
+          </div>
+          <p style="font-size:12px;color:rgba(255,255,255,0.25);margin-top:16px;text-align:center;">⚠️ Clips are stored on Railway's temporary filesystem — download before the next deploy.</p>
+        </div>
+
+        <!-- Generate new video -->
+        <div style="margin-top:16px;text-align:center;">
+          <button onclick="generateVideo()" style="background:transparent;color:var(--gray);border:0.5px solid rgba(255,255,255,0.15);padding:9px 20px;border-radius:8px;font-size:13px;cursor:pointer;">
+            🔄 Regenerate today's video
+          </button>
+        </div>`;
+    })
+    .catch(() => {
+      document.getElementById('videoPanelBody').innerHTML = '<p style="color:var(--red);">Failed to load video data.</p>';
+    });
+}
+
+function generateVideo() {
+  showToast('⚡ Generating video... this takes ~90 seconds.');
+  fetch('/admin/api/video/generate?force=true', { method: 'POST', headers: { 'x-admin-token': TOKEN } })
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) { showToast('✅ Video ready: "' + d.video.title + '"'); renderVideoPanel(); }
+      else showToast('❌ ' + (d.error || 'Generation failed'));
+    })
+    .catch(() => showToast('❌ Request failed'));
+}
+
+function generateClips() {
+  showToast('✂️ Cutting clips... check back in ~60 seconds.');
+  fetch('/admin/api/clips/generate', { method: 'POST', headers: { 'x-admin-token': TOKEN } })
+    .then(() => showToast('✅ Clips are being cut. Refresh in 60s to download.'))
+    .catch(() => showToast('❌ Request failed'));
 }
 
 function renderSettings() {
