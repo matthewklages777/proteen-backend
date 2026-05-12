@@ -179,6 +179,24 @@ app.post('/admin/api/video/generate', adminAuth, async (req, res) => {
   }
 });
 
+app.post('/admin/api/quote/generate', adminAuth, async (req, res) => {
+  try {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 200,
+      messages: [{ role: 'user', content: 'Write one short powerful quote (under 20 words) specifically for teenagers about growth, resilience, or potential. Make it original, not a famous quote. Return ONLY a JSON object like: {"text":"quote here","author":"ProTeen Nation"}' }],
+    });
+    const parsed = JSON.parse(msg.content[0].text.trim().replace(/```json|```/g, '').trim());
+    const quote = { ...parsed, date: new Date().toISOString().split('T')[0], generatedAt: new Date().toISOString() };
+    quoteDB.saveQuote(quote);
+    res.json({ success: true, quote });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.post('/admin/api/video/generate/:topicId', adminAuth, async (req, res) => {
   const TOPICS = ['resilience','school','relationships','faith','sports','health','careers'];
   const topicId = req.params.topicId;
