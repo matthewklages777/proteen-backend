@@ -261,6 +261,22 @@ app.post('/admin/api/scholarships/mine', adminAuth, async (req, res) => {
   }
 });
 
+app.get('/admin/api/scholarships/test-tavily', adminAuth, async (req, res) => {
+  const axios = require('axios');
+  const apiKey = process.env.TAVILY_API_KEY;
+  if (!apiKey) return res.json({ error: 'TAVILY_API_KEY not set' });
+  try {
+    const response = await axios.post('https://api.tavily.com/search', {
+      api_key: apiKey,
+      query: 'scholarship 2026 high school students',
+      max_results: 3,
+    }, { timeout: 15000 });
+    res.json({ success: true, resultCount: response.data.results?.length || 0, sample: response.data.results?.slice(0,2).map(r => ({ title: r.title, url: r.url })) });
+  } catch (err) {
+    res.json({ success: false, status: err.response?.status, error: err.response?.data || err.message });
+  }
+});
+
 app.get('/admin/api/scholarships', adminAuth, (req, res) => {
   res.json({ scholarships: scholarshipDB.getAll(), stats: scholarshipDB.getStats() });
 });
