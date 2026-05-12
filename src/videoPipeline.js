@@ -63,14 +63,44 @@ async function generateAudio(script, videoId) {
   const { OpenAI } = require('openai');
   const openai = new OpenAI({ apiKey: openaiKey });
   console.log('[Pipeline] Generating audio with OpenAI TTS (onyx voice)...');
-  const mp3 = await openai.audio.speech.create({
-    model: 'tts-1',
-    voice: 'onyx', // deep, powerful voice — great for motivational content
-    input: script,
-    speed: 1.0,
-  });
-  const buffer = Buffer.from(await mp3.arrayBuffer());
-  fs.writeFileSync(audioPath, buffer);
+
+  // OpenAI TTS has a 4096-character limit — chunk long scripts and concatenate
+  const MAX_CHARS = 4000;
+  const chunks = [];
+  if (script.length <= MAX_CHARS) {
+    chunks.push(script);
+  } else {
+    // Split on sentence boundaries to avoid cutting mid-sentence
+    const sentences = script.match(/[^.!?]+[.!?]+/g) || [script];
+    let current = '';
+    for (const sentence of sentences) {
+      if ((current + sentence).length > MAX_CHARS) {
+        if (current) chunks.push(current.trim());
+        current = sentence;
+      } else {
+        current += sentence;
+      }
+    }
+    if (current.trim()) chunks.push(current.trim());
+  }
+
+  console.log(`[Pipeline] Script split into ${chunks.length} TTS chunk(s)`);
+
+  const buffers = [];
+  for (let i = 0; i < chunks.length; i++) {
+    console.log(`[Pipeline] Synthesizing chunk ${i + 1}/${chunks.length} (${chunks[i].length} chars)`);
+    const mp3 = await openai.audio.speech.create({
+      model: 'tts-1',
+      voice: 'onyx',
+      input: chunks[i],
+      speed: 1.0,
+    });
+    buffers.push(Buffer.from(await mp3.arrayBuffer()));
+  }
+
+  // Concatenate all MP3 buffers (MP3 frames are self-contained — simple concat works)
+  const finalBuffer = Buffer.concat(buffers);
+  fs.writeFileSync(audioPath, finalBuffer);
   console.log('[Pipeline] Audio saved via OpenAI TTS:', audioPath);
   return audioPath;
 }
