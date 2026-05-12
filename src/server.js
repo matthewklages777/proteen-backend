@@ -11,6 +11,8 @@ const { videoDB, scheduleDB, quoteDB } = require('./videoDatabase');
 const { runHealthCheck } = require('./monitor');
 const { runDailyVideoPipeline, testPipeline } = require('./videoPipeline');
 const { runClipPipeline } = require('./clipPipeline');
+const { runScholarshipMiner } = require('./scholarshipMiner');
+const { scholarshipDB } = require('./scholarshipDatabase');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -49,6 +51,13 @@ app.get('/api/videos', (req, res) => {
   if (topic) videos = videos.filter(v => v.topic === topic);
   if (limit) videos = videos.slice(0, parseInt(limit));
   res.json({ videos, count: videos.length });
+});
+
+// Public scholarship endpoints
+app.get('/api/scholarships', (req, res) => {
+  const { type, limit } = req.query;
+  const scholarships = scholarshipDB.getActive({ type, limit });
+  res.json({ scholarships, count: scholarships.length, stats: scholarshipDB.getStats() });
 });
 
 app.get('/api/quote/today', (req, res) => {
@@ -236,6 +245,21 @@ app.post('/admin/api/clips/generate', adminAuth, async (req, res) => {
   }
 });
 
+// Scholarship admin endpoints
+app.post('/admin/api/scholarships/mine', adminAuth, async (req, res) => {
+  res.json({ message: 'Scholarship mining started. Results will appear in /api/scholarships shortly.' });
+  runScholarshipMiner().catch(err => console.error('[Admin] Scholarship miner error:', err.message));
+});
+
+app.get('/admin/api/scholarships', adminAuth, (req, res) => {
+  res.json({ scholarships: scholarshipDB.getAll(), stats: scholarshipDB.getStats() });
+});
+
+app.delete('/admin/api/scholarships/:id', adminAuth, (req, res) => {
+  scholarshipDB.expire(req.params.id);
+  res.json({ success: true });
+});
+
 app.post('/admin/api/video/test', adminAuth, async (req, res) => {
   try {
     console.log('[Admin] Starting pipeline test (blocking)...');
@@ -325,6 +349,17 @@ function startScheduler() {
       }
     } catch (err) {
       console.error('[Scheduler] Video pipeline failed:', err.message);
+    }
+  });
+
+  // Mine scholarships daily at 7 AM
+  cron.schedule('0 7 * * *', async () => {
+    console.log('[Scheduler] Running daily scholarship mining...');
+    try {
+      const result = await runScholarshipMiner();
+      console.log('[Scheduler] Scholarship mining done:', result);
+    } catch (err) {
+      console.error('[Scheduler] Scholarship mining failed:', err.message);
     }
   });
 
