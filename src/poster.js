@@ -1,5 +1,5 @@
 // ProTeen Nation — Buffer Poster
-// Posts daily videos and clips to all social media via Buffer API
+// Posts daily videos and clips to all social media via Buffer GraphQL API
 // Channels: Instagram, Facebook, X (Twitter), YouTube, TikTok
 
 require('dotenv').config();
@@ -17,76 +17,85 @@ const CHANNELS = {
   tiktok:    '6a0b5260090476fb9933368f',
 };
 
-async function bufferQuery(query, variables = {}) {
+// X/Twitter & TikTok have short video limits — only receive clips, not full video
+const CLIP_ONLY_CHANNELS = ['twitter', 'tiktok'];
+
+const MUTATION = `
+  mutation CreatePost($input: CreatePostInput!) {
+    createPost(input: $input) {
+      ... on PostActionSuccess { post { id status dueAt } }
+      ... on InvalidInputError  { message }
+      ... on UnexpectedError    { message }
+      ... on LimitReachedError  { message }
+    }
+  }`;
+
+async function bufferQuery(variables) {
   const token = process.env.BUFFER_ACCESS_TOKEN;
   if (!token) throw new Error('BUFFER_ACCESS_TOKEN not set in Railway variables');
   const res = await axios.post(BUFFER_API,
-    { query, variables },
+    { query: MUTATION, variables },
     { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 30000 }
   );
   if (res.data.errors) throw new Error(res.data.errors[0].message);
   return res.data.data;
 }
 
-// Schedule a single post to one channel
-async function schedulePost({ channelId, text, mediaUrl, scheduledAt }) {
-  const mutation = `
-    mutation CreatePost($input: CreatePostInput!) {
-      createPost(input: $input) {
-        post { id status scheduledAt }
-        userFeedback { message type }
-      }
-    }`;
-
+// Schedule a single post to one Buffer channel
+async function schedulePost({ channelId, text, mediaUrl, dueAt }) {
   const input = {
-    organizationId: ORG_ID,
     channelId,
     text,
-    scheduledAt,
-    ...(mediaUrl ? { media: [{ url: mediaUrl, mediaType: 'video' }] } : {}),
+    schedulingType: 'automatic',
+    mode: dueAt ? 'customScheduled' : 'addToQueue',
+    ...(dueAt ? { dueAt } : {}),
+    assets: mediaUrl ? [{ video: { url: mediaUrl } }] : [],
   };
 
   try {
-    const data = await bufferQuery(mutation, { input });
-    const post     = data.createPost?.post;
-    const feedback = data.createPost?.userFeedback;
-    if (post) {
-      console.log(`[Buffer] ✅ Scheduled post ${post.id} at ${scheduledAt}`);
-      return { success: true, postId: post.id };
+    const data = await bufferQuery({ input });
+    const result = data?.createPost;
+    if (result?.post) {
+      console.log(`[Buffer] ✅ Post ${result.post.id} | Due: ${result.post.dueAt}`);
+      return { success: true, postId: result.post.id };
     }
-    console.warn('[Buffer] Feedback:', feedback?.message);
-    return { success: false, reason: feedback?.message };
+    console.warn('[Buffer] Error:', result?.message);
+    return { success: false, reason: result?.message };
   } catch (err) {
     console.error('[Buffer] schedulePost failed:', err.message);
     return { success: false, error: err.message };
   }
 }
 
-// Post today's daily video to ALL channels at 6 AM CST (11:00 UTC in CDT / 12:00 UTC standard)
+// Post today's daily video to long-form channels at 6 AM CST (11:00 UTC CDT)
 async function postDailyVideo(video) {
-  if (!video?.videoUrl) { console.warn('[Buffer] No videoUrl on video record'); return {}; }
+  if (!video?.videoUrl) { console.warn('[Buffer] No videoUrl'); return {}; }
 
-  // 6:00 AM CST = 11:00 UTC (CDT, UTC-5, May–Nov) or 12:00 UTC (CST, UTC-6, Nov–Mar)
   const now = new Date();
-  const scheduledAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 11, 0, 0)).toISOString();
+  const dueAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 11, 0, 0)).toISOString();
 
-  const topicTag = (video.topicName || '').replace(/\s+&?\s*/g, '').replace(/[^a-zA-Z]/g, '');
+  const topicTag = (video.topicName || '').replace(/[\s&]+/g, '').replace(/[^a-zA-Z]/g, '');
   const caption  = `"${video.title}"\n\nToday's Daily Message — ProTeen Nation 🔥\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag} #Teens #Motivation`;
 
-  console.log('[Buffer] Scheduling daily video to all channels at', scheduledAt);
+  console.log('[Buffer] Scheduling daily video at', dueAt);
   const results = {};
   for (const [platform, channelId] of Object.entries(CHANNELS)) {
-    results[platform] = await schedulePost({ channelId, text: caption, mediaUrl: video.videoUrl, scheduledAt });
+    if (CLIP_ONLY_CHANNELS.includes(platform)) {
+      console.log(`[Buffer] Skipping full video for ${platform} (clip-only platform)`);
+      results[platform] = { skipped: true, reason: 'clip-only platform' };
+      continue;
+    }
+    results[platform] = await schedulePost({ channelId, text: caption, mediaUrl: video.videoUrl, dueAt });
     await delay(600);
   }
-  console.log('[Buffer] Daily video scheduled:', results);
   return results;
 }
 
-// Post 6 clips spread throughout the day (CST)
-// 7:30, 9:15, 11:45, 14:00, 16:30, 20:00 CST → UTC+5 (CDT): 12:30, 14:15, 16:45, 19:00, 21:30, 01:00
+// Schedule 6 clips throughout the day via Buffer
+// CST post times: 7:30, 9:15, 11:45, 14:00, 16:30, 20:00
+// UTC (CDT +5):  12:30, 14:15, 16:45, 19:00, 21:30, 01:00
 async function postClips(video, clips) {
-  if (!clips?.length) { console.warn('[Buffer] No clips provided'); return []; }
+  if (!clips?.length) { console.warn('[Buffer] No clips'); return []; }
 
   const POST_TIMES_UTC = ['12:30', '14:15', '16:45', '19:00', '21:30', '01:00'];
   const now = new Date();
@@ -95,25 +104,23 @@ async function postClips(video, clips) {
   for (let i = 0; i < Math.min(clips.length, 6); i++) {
     const clip   = clips[i];
     const [h, m] = POST_TIMES_UTC[i].split(':').map(Number);
-    // For 01:00 UTC, that's next day
-    const dayOffset = h < 5 ? 1 : 0;
-    const schedAt   = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOffset, h, m, 0)).toISOString();
+    const dayOff = h < 5 ? 1 : 0; // 01:00 UTC is next day
+    const dueAt  = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOff, h, m, 0)).toISOString();
 
-    const topicTag = (video.topicName || '').replace(/\s+&?\s*/g, '').replace(/[^a-zA-Z]/g, '');
-    const caption  = clip.caption ||
-      `"${video.title}" 🔥\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag} #Teens #DailyMessage`;
+    const topicTag = (video.topicName || '').replace(/[\s&]+/g, '').replace(/[^a-zA-Z]/g, '');
+    const caption  = clip.caption || `"${video.title}" 🔥\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag}`;
 
     console.log(`[Buffer] Scheduling clip ${i + 1}/6 at ${POST_TIMES_UTC[i]} UTC to all channels`);
     const clipResults = {};
     for (const [platform, channelId] of Object.entries(CHANNELS)) {
-      clipResults[platform] = await schedulePost({ channelId, text: caption, mediaUrl: clip.clipUrl, scheduledAt: schedAt });
+      clipResults[platform] = await schedulePost({ channelId, text: caption, mediaUrl: clip.clipUrl, dueAt });
       await delay(600);
     }
-    results.push({ clip: i + 1, scheduledAt: schedAt, platforms: clipResults });
+    results.push({ clip: i + 1, dueAt, platforms: clipResults });
     await delay(1000);
   }
 
-  console.log(`[Buffer] All ${results.length} clips scheduled`);
+  console.log(`[Buffer] All ${results.length} clips scheduled ✅`);
   return results;
 }
 
