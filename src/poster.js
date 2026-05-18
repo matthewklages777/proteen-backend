@@ -1,99 +1,122 @@
-// ProTeen Nation — Social Media Poster
-// Triggers Zapier/Make webhooks to post content to each platform.
-// Each platform has its own webhook URL set in .env.
-// Zapier/Make handles the actual API calls to TikTok, Instagram, etc.
+// ProTeen Nation — Buffer Poster
+// Posts daily videos and clips to all social media via Buffer API
+// Channels: Instagram, Facebook, X (Twitter), YouTube, TikTok
 
 require('dotenv').config();
 const axios = require('axios');
 
-// ── Webhook URLs (set these in .env after setting up Zapier/Make) ──────────
-const WEBHOOKS = {
-  tiktok:    process.env.WEBHOOK_TIKTOK,
-  instagram: process.env.WEBHOOK_INSTAGRAM,
-  youtube:   process.env.WEBHOOK_YOUTUBE,
-  facebook:  process.env.WEBHOOK_FACEBOOK,
-  x:         process.env.WEBHOOK_X,
+const BUFFER_API = 'https://api.buffer.com/graphql';
+const ORG_ID     = '6a0b4a9276619973c3a551a3';
+
+// Channel IDs from Buffer account (matthewklages@me.com)
+const CHANNELS = {
+  instagram: '6a0b4e78090476fb99332860',
+  facebook:  '6a0b4f23090476fb99332b0f',
+  twitter:   '6a0b5011090476fb99332ec0',
+  youtube:   '6a0b5135090476fb993332bc',
+  tiktok:    '6a0b5260090476fb9933368f',
 };
 
-// ── Post a single platform slot ────────────────────────────────────────────
-async function postToplatform(platformPost, content) {
-  const webhookUrl = WEBHOOKS[platformPost.platform];
+async function bufferQuery(query, variables = {}) {
+  const token = process.env.BUFFER_ACCESS_TOKEN;
+  if (!token) throw new Error('BUFFER_ACCESS_TOKEN not set in Railway variables');
+  const res = await axios.post(BUFFER_API,
+    { query, variables },
+    { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 30000 }
+  );
+  if (res.data.errors) throw new Error(res.data.errors[0].message);
+  return res.data.data;
+}
 
-  if (!webhookUrl) {
-    console.log(`[Poster] No webhook set for ${platformPost.platform} — skipping. Add WEBHOOK_${platformPost.platform.toUpperCase()} to .env`);
-    return { success: false, reason: 'No webhook configured' };
-  }
+// Schedule a single post to one channel
+async function schedulePost({ channelId, text, mediaUrl, scheduledAt }) {
+  const mutation = `
+    mutation CreatePost($input: CreatePostInput!) {
+      createPost(input: $input) {
+        post { id status scheduledAt }
+        userFeedback { message type }
+      }
+    }`;
 
-  // Build the payload Zapier/Make will receive
-  const payload = {
-    platform: platformPost.platform,
-    platformName: platformPost.platformName,
-    scheduledFor: platformPost.scheduledFor,
-    // Content details
-    contentType: content.type,
-    isFullVideo: content.isFullVideo || false,
-    isReshare: content.isReshare || false,
-    isThirdParty: content.type === 'third_party',
-    isOriginal: content.isOriginal || false,
-    videoId: content.videoId || content.id,
-    videoUrl: content.videoUrl || null,
-    // For clip posts: timestamp range to extract
-    clipStartSec: content.estimatedStartSec,
-    clipEndSec: content.estimatedEndSec,
-    clipDurationSec: 30,
-    // Caption ready to paste
-    caption: platformPost.caption,
-    // Watermark instructions for HeyGen or video processor
-    watermark: platformPost.watermark,
-    // Format spec
-    format: platformPost.format, // '9:16' or '16:9'
-    // Credit info for third-party
-    creditSource: content.creditFormat || null,
-    creditUrl: content.url || null,
-    // Metadata
-    contentTitle: content.title || content.cleanTitle,
-    postedBy: 'ProTeen Nation Automated System',
-    timestamp: new Date().toISOString(),
+  const input = {
+    organizationId: ORG_ID,
+    channelId,
+    text,
+    scheduledAt,
+    ...(mediaUrl ? { media: [{ url: mediaUrl, mediaType: 'video' }] } : {}),
   };
 
   try {
-    const response = await axios.post(webhookUrl, payload, {
-      timeout: 15000,
-      headers: { 'Content-Type': 'application/json' },
-    });
-    console.log(`[Poster] ✓ Triggered ${platformPost.platformName}: ${content.title?.slice(0, 50)}`);
-    return { success: true, status: response.status };
+    const data = await bufferQuery(mutation, { input });
+    const post     = data.createPost?.post;
+    const feedback = data.createPost?.userFeedback;
+    if (post) {
+      console.log(`[Buffer] ✅ Scheduled post ${post.id} at ${scheduledAt}`);
+      return { success: true, postId: post.id };
+    }
+    console.warn('[Buffer] Feedback:', feedback?.message);
+    return { success: false, reason: feedback?.message };
   } catch (err) {
-    console.error(`[Poster] ✗ Failed ${platformPost.platformName}:`, err.message);
-    return { success: false, reason: err.message };
+    console.error('[Buffer] schedulePost failed:', err.message);
+    return { success: false, error: err.message };
   }
 }
 
-// ── Post all platforms for a scheduled slot ────────────────────────────────
-async function postScheduledSlot(slot) {
-  console.log(`\n[Poster] Posting slot: ${slot.label} (${slot.scheduledTime})`);
-  const results = [];
+// Post today's daily video to ALL channels at 6 AM CST (11:00 UTC in CDT / 12:00 UTC standard)
+async function postDailyVideo(video) {
+  if (!video?.videoUrl) { console.warn('[Buffer] No videoUrl on video record'); return {}; }
 
-  for (const platformPost of slot.platforms) {
-    const result = await postToplatform(platformPost, slot.content);
-    results.push({ platform: platformPost.platform, ...result });
-    // Stagger posts by 3 seconds to avoid rate limiting
-    await new Promise(r => setTimeout(r, 3000));
+  // 6:00 AM CST = 11:00 UTC (CDT, UTC-5, May–Nov) or 12:00 UTC (CST, UTC-6, Nov–Mar)
+  const now = new Date();
+  const scheduledAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 11, 0, 0)).toISOString();
+
+  const topicTag = (video.topicName || '').replace(/\s+&?\s*/g, '').replace(/[^a-zA-Z]/g, '');
+  const caption  = `"${video.title}"\n\nToday's Daily Message — ProTeen Nation 🔥\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag} #Teens #Motivation`;
+
+  console.log('[Buffer] Scheduling daily video to all channels at', scheduledAt);
+  const results = {};
+  for (const [platform, channelId] of Object.entries(CHANNELS)) {
+    results[platform] = await schedulePost({ channelId, text: caption, mediaUrl: video.videoUrl, scheduledAt });
+    await delay(600);
   }
-
-  const succeeded = results.filter(r => r.success).length;
-  const failed = results.filter(r => !r.success).length;
-  console.log(`[Poster] Slot complete: ${succeeded} posted, ${failed} failed`);
+  console.log('[Buffer] Daily video scheduled:', results);
   return results;
 }
 
-// ── Check which webhooks are configured ───────────────────────────────────
-function getWebhookStatus() {
-  return Object.entries(WEBHOOKS).map(([platform, url]) => ({
-    platform,
-    configured: !!url,
-    hint: url ? '✓ Ready' : `Add WEBHOOK_${platform.toUpperCase()} to your .env file`,
-  }));
+// Post 6 clips spread throughout the day (CST)
+// 7:30, 9:15, 11:45, 14:00, 16:30, 20:00 CST → UTC+5 (CDT): 12:30, 14:15, 16:45, 19:00, 21:30, 01:00
+async function postClips(video, clips) {
+  if (!clips?.length) { console.warn('[Buffer] No clips provided'); return []; }
+
+  const POST_TIMES_UTC = ['12:30', '14:15', '16:45', '19:00', '21:30', '01:00'];
+  const now = new Date();
+  const results = [];
+
+  for (let i = 0; i < Math.min(clips.length, 6); i++) {
+    const clip   = clips[i];
+    const [h, m] = POST_TIMES_UTC[i].split(':').map(Number);
+    // For 01:00 UTC, that's next day
+    const dayOffset = h < 5 ? 1 : 0;
+    const schedAt   = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOffset, h, m, 0)).toISOString();
+
+    const topicTag = (video.topicName || '').replace(/\s+&?\s*/g, '').replace(/[^a-zA-Z]/g, '');
+    const caption  = clip.caption ||
+      `"${video.title}" 🔥\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag} #Teens #DailyMessage`;
+
+    console.log(`[Buffer] Scheduling clip ${i + 1}/6 at ${POST_TIMES_UTC[i]} UTC to all channels`);
+    const clipResults = {};
+    for (const [platform, channelId] of Object.entries(CHANNELS)) {
+      clipResults[platform] = await schedulePost({ channelId, text: caption, mediaUrl: clip.clipUrl, scheduledAt: schedAt });
+      await delay(600);
+    }
+    results.push({ clip: i + 1, scheduledAt: schedAt, platforms: clipResults });
+    await delay(1000);
+  }
+
+  console.log(`[Buffer] All ${results.length} clips scheduled`);
+  return results;
 }
 
-module.exports = { postToplatform, postScheduledSlot, getWebhookStatus };
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+module.exports = { postDailyVideo, postClips, schedulePost, CHANNELS };

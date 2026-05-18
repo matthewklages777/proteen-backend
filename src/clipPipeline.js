@@ -164,53 +164,39 @@ async function runClipPipeline(video) {
     return;
   }
 
-  // Step 2: Cut all 6 clips now (at 5 AM), schedule posts throughout the day
+  // Step 2: Cut all 6 clips
   const readyClips = [];
-
   for (let i = 0; i < clipMoments.length; i++) {
-    const clip = clipMoments[i];
-    const clipId = `${video.id}_clip${i + 1}`;
-    const postTime = POST_TIMES[i] || '12:00';
-
+    const clip    = clipMoments[i];
+    const clipId  = `${video.id}_clip${i + 1}`;
     const startSec = Math.max(0, Math.floor(clip.startSec || 0));
-    const endSec = Math.min(video.durationSecs, Math.ceil(clip.endSec || startSec + 30));
+    const endSec   = Math.min(video.durationSecs, Math.ceil(clip.endSec || startSec + 30));
 
-    console.log(`[ClipPipeline] Cutting clip ${i + 1}/6: ${startSec}s–${endSec}s (${clip.type}) → posts at ${postTime}`);
-
+    console.log(`[ClipPipeline] Cutting clip ${i + 1}/6: ${startSec}s–${endSec}s (${clip.type})`);
     try {
       await renderClip(video.videoPath, startSec, endSec, clipId);
       const clipUrl = `${BACKEND_URL}/videos/${clipId}_clip.mp4`;
-      readyClips.push({ clip, clipUrl, postTime, index: i + 1 });
+      const caption = await generateCaption(clip, 'general', video);
+      readyClips.push({ clip, clipUrl, caption, index: i + 1 });
       console.log(`[ClipPipeline] Clip ${i + 1} ready: ${clipUrl}`);
     } catch (err) {
       console.error(`[ClipPipeline] Failed to cut clip ${i + 1}:`, err.message);
     }
   }
 
-  console.log(`[ClipPipeline] All ${readyClips.length} clips cut. Scheduling posts throughout the day...`);
+  console.log(`[ClipPipeline] ${readyClips.length} clips cut. Scheduling via Buffer...`);
 
-  // Step 3: Schedule each clip to post at its designated time
-  for (const { clip, clipUrl, postTime, index } of readyClips) {
-    const delay = msUntil(postTime);
-    const delayMins = Math.round(delay / 60000);
-    console.log(`[ClipPipeline] Clip ${index} (${clip.type}) scheduled for ${postTime} — in ${delayMins} minutes`);
-
-    setTimeout(async () => {
-      console.log(`[ClipPipeline] Posting clip ${index} at ${postTime}...`);
-      for (const platform of CLIP_PLATFORMS) {
-        const caption = await generateCaption(clip, platform, video);
-        await postClip(clipUrl, caption, platform, clip, video, postTime);
-        await new Promise(r => setTimeout(r, 2000)); // stagger between platforms
-      }
-      console.log(`[ClipPipeline] Clip ${index} posted to all platforms.`);
-    }, delay);
+  // Step 3: Schedule all clips via Buffer (spreads posts throughout the day automatically)
+  try {
+    const { postClips } = require('./poster');
+    const bufferClips = readyClips.map(c => ({ clipUrl: c.clipUrl, caption: c.caption }));
+    await postClips(video, bufferClips);
+    console.log('[ClipPipeline] All clips scheduled in Buffer ✅');
+  } catch (err) {
+    console.error('[ClipPipeline] Buffer scheduling failed:', err.message);
   }
 
-  console.log(`[ClipPipeline] Schedule set. Clips will post at: ${readyClips.map(c => c.postTime).join(', ')}`);
-  console.log('[ClipPipeline] TikTok — download these clips manually:');
-  readyClips.forEach(({ clipUrl, index }) => console.log(`  Clip ${index}: ${clipUrl}`));
-
-  return readyClips.map(c => ({ clip: c.index, postTime: c.postTime, url: c.clipUrl }));
+  return readyClips.map(c => ({ clip: c.index, url: c.clipUrl }));
 }
 
 module.exports = { runClipPipeline };

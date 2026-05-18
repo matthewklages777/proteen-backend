@@ -442,7 +442,15 @@ function startScheduler() {
     try {
       const video = await runDailyVideoPipeline();
       console.log('[Scheduler] Video ready:', video.title);
-      // Cut 6 clips and post to Instagram/YouTube/Facebook/X
+      // Post full video to all platforms via Buffer at 6 AM CST
+      try {
+        const { postDailyVideo } = require('./poster');
+        await postDailyVideo(video);
+        console.log('[Scheduler] Daily video scheduled in Buffer ✅');
+      } catch (bufferErr) {
+        console.error('[Scheduler] Buffer daily video post failed:', bufferErr.message);
+      }
+      // Cut 6 clips and schedule via Buffer throughout the day
       try {
         await runClipPipeline(video);
       } catch (clipErr) {
