@@ -261,6 +261,29 @@ app.post('/admin/api/scholarships/mine', adminAuth, async (req, res) => {
   }
 });
 
+app.post('/admin/api/webhooks/test', adminAuth, async (req, res) => {
+  const axios = require('axios');
+  const platforms = ['INSTAGRAM', 'YOUTUBE', 'FACEBOOK', 'X'];
+  const results = {};
+  for (const p of platforms) {
+    const url = process.env[`WEBHOOK_${p}`];
+    if (!url) { results[p] = { ok: false, reason: 'Not configured' }; continue; }
+    // Mask URL for display
+    const masked = url.slice(0, 40) + '...';
+    try {
+      const r = await axios.post(url, {
+        test: true, platform: p.toLowerCase(),
+        message: 'ProTeen Nation webhook test ping',
+        timestamp: new Date().toISOString(),
+      }, { timeout: 10000 });
+      results[p] = { ok: true, status: r.status, url: masked };
+    } catch (err) {
+      results[p] = { ok: false, status: err.response?.status, error: err.message, url: masked };
+    }
+  }
+  res.json(results);
+});
+
 app.get('/admin/api/scholarships/test-sources', adminAuth, async (req, res) => {
   const axios = require('axios');
   const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36';
