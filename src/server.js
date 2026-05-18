@@ -60,9 +60,30 @@ app.get('/api/scholarships', (req, res) => {
   res.json({ scholarships, count: scholarships.length, stats: scholarshipDB.getStats() });
 });
 
-app.get('/api/quote/today', (req, res) => {
-  const quote = quoteDB.getToday();
-  res.json({ quote: quote || null });
+app.get('/api/quote/today', async (req, res) => {
+  let quote = quoteDB.getToday();
+  // If no quote for today yet, generate one on the fly
+  if (!quote) {
+    try {
+      const Anthropic = require('@anthropic-ai/sdk');
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const msg = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 150,
+        messages: [{ role: 'user', content: 'Write one short powerful quote (under 20 words) specifically for teenagers about growth, resilience, or potential. Make it original, not a famous quote. Return ONLY a JSON object like: {"text":"quote here","author":"ProTeen Nation"}' }],
+      });
+      const parsed = JSON.parse(msg.content[0].text.trim().replace(/```json|```/g, '').trim());
+      quote = { ...parsed, date: new Date().toISOString().split('T')[0], generatedAt: new Date().toISOString() };
+      quoteDB.saveQuote(quote);
+      console.log('[Quote] On-demand quote generated:', quote.text);
+    } catch (err) {
+      console.error('[Quote] On-demand generation failed:', err.message);
+      // Fallback quote so the site never shows blank
+      quote = { text: "Your potential is limitless. Start proving it today.", author: "ProTeen Nation", date: new Date().toISOString().split('T')[0] };
+    }
+  }
+  res.set('Cache-Control', 'no-store');
+  res.json({ quote });
 });
 
 app.get('/api/video/today', (req, res) => {
