@@ -209,6 +209,35 @@ app.post('/admin/api/video/generate', adminAuth, async (req, res) => {
   }
 });
 
+// Manually trigger Buffer posting for today's video
+app.post('/admin/api/buffer/post-today', adminAuth, async (req, res) => {
+  try {
+    const video = videoDB.getToday();
+    if (!video) return res.status(404).json({ success: false, error: 'No video for today' });
+    if (!video.videoUrl) return res.status(400).json({ success: false, error: 'Video has no URL' });
+    const { postDailyVideo } = require('./poster');
+    console.log('[Admin] Manually triggering Buffer post for:', video.title);
+    const results = await postDailyVideo(video);
+    res.json({ success: true, video: video.title, videoUrl: video.videoUrl, bufferResults: results });
+  } catch (err) {
+    console.error('[Admin] Buffer manual post failed:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Manually trigger Buffer clip pipeline for today's video
+app.post('/admin/api/buffer/post-clips', adminAuth, async (req, res) => {
+  try {
+    const video = videoDB.getToday();
+    if (!video) return res.status(404).json({ success: false, error: 'No video for today' });
+    console.log('[Admin] Manually triggering clip pipeline for:', video.title);
+    res.json({ success: true, message: 'Clip pipeline started in background' });
+    runClipPipeline(video).catch(err => console.error('[Admin] Clip pipeline error:', err.message));
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.post('/admin/api/quote/generate', adminAuth, async (req, res) => {
   try {
     const Anthropic = require('@anthropic-ai/sdk');

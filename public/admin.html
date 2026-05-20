@@ -394,6 +394,20 @@ function renderVideoPanel() {
           <p style="font-size:12px;color:rgba(255,255,255,0.25);margin-top:16px;text-align:center;">⚠️ Clips are stored on Railway's temporary filesystem — download before the next deploy.</p>
         </div>
 
+        <!-- Buffer social posting -->
+        <div style="margin-top:16px;background:var(--black2);border-radius:14px;padding:20px;border:0.5px solid rgba(255,255,255,0.07);">
+          <h3 style="font-size:16px;font-weight:600;margin-bottom:6px;">📡 Post to Social via Buffer</h3>
+          <p style="font-size:13px;color:var(--gray);margin-bottom:16px;">Manually schedule today's content to all platforms if the automatic post didn't fire.</p>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;">
+            <button onclick="bufferPostVideo()" style="background:var(--gold);color:#000;border:none;padding:10px 22px;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer;">
+              📺 Post Full Video Now
+            </button>
+            <button onclick="bufferPostClips()" style="background:rgba(232,184,75,0.15);color:var(--gold);border:1px solid rgba(232,184,75,0.3);padding:10px 22px;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer;">
+              ✂️ Schedule Clips Now
+            </button>
+          </div>
+        </div>
+
         <!-- Generate new video -->
         <div style="margin-top:16px;text-align:center;">
           <button onclick="generateVideo()" style="background:transparent;color:var(--gray);border:0.5px solid rgba(255,255,255,0.15);padding:9px 20px;border-radius:8px;font-size:13px;cursor:pointer;">
@@ -421,6 +435,38 @@ function generateClips() {
   showToast('✂️ Cutting clips... check back in ~60 seconds.');
   fetch('/admin/api/clips/generate', { method: 'POST', headers: { 'x-admin-token': TOKEN } })
     .then(() => showToast('✅ Clips are being cut. Refresh in 60s to download.'))
+    .catch(() => showToast('❌ Request failed'));
+}
+
+function bufferPostVideo() {
+  showToast('📡 Sending today\'s video to Buffer...');
+  fetch('/admin/api/buffer/post-today', { method: 'POST', headers: { 'x-admin-token': TOKEN } })
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        const results = d.bufferResults || {};
+        const ok = Object.entries(results).filter(([,v]) => v?.success).map(([k]) => k).join(', ');
+        const skipped = Object.entries(results).filter(([,v]) => v?.skipped).map(([k]) => k).join(', ');
+        const failed = Object.entries(results).filter(([,v]) => !v?.success && !v?.skipped).map(([k]) => k).join(', ');
+        let msg = '✅ Scheduled: ' + (ok || 'none');
+        if (skipped) msg += ' | Skipped: ' + skipped;
+        if (failed) msg += ' | ❌ Failed: ' + failed;
+        showToast(msg);
+      } else {
+        showToast('❌ ' + (d.error || 'Buffer post failed'));
+      }
+    })
+    .catch(() => showToast('❌ Request failed'));
+}
+
+function bufferPostClips() {
+  showToast('✂️ Starting clip pipeline → Buffer scheduling...');
+  fetch('/admin/api/buffer/post-clips', { method: 'POST', headers: { 'x-admin-token': TOKEN } })
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) showToast('✅ Clips are being cut and scheduled in Buffer. Check Buffer dashboard in ~2 min.');
+      else showToast('❌ ' + (d.error || 'Failed'));
+    })
     .catch(() => showToast('❌ Request failed'));
 }
 
