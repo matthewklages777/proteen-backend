@@ -358,24 +358,40 @@ async function renderClip(fullVideoPath, startSec, endSec, clipId) {
   const shadow = ':shadowx=2:shadowy=2';
 
   const watermarkFilter = [
-    // Top-left brand handle
-    `drawtext=text='@ProTeenNation':fontsize=38:fontcolor=${fontcolor}:shadowcolor=${shadowcolor}${shadow}:x=28:y=28:font=Arial`,
+    // Top-left brand handle — no font specified so ffmpeg uses built-in default
+    `drawtext=text='@ProTeenNation':fontsize=38:fontcolor=${fontcolor}:shadowcolor=${shadowcolor}${shadow}:x=28:y=28`,
     // Bottom-center CTA
-    `drawtext=text='proteennation.com':fontsize=32:fontcolor=${fontcolor}:shadowcolor=${shadowcolor}${shadow}:x=(w-text_w)/2:y=h-56:font=Arial`,
+    `drawtext=text='proteennation.com':fontsize=32:fontcolor=${fontcolor}:shadowcolor=${shadowcolor}${shadow}:x=(w-text_w)/2:y=h-56`,
   ].join(',');
 
-  await new Promise((resolve, reject) => {
-    ffmpeg(fullVideoPath)
-      .setStartTime(startSec).setDuration(endSec - startSec)
-      .videoFilter(watermarkFilter)
-      .outputOptions(['-c:v libx264', '-c:a aac', '-b:a 192k', '-pix_fmt yuv420p',
-                      '-r 25', '-movflags +faststart'])
-      .output(clipPath)
-      .on('end', resolve)
-      .on('error', (err) => reject(err))
-      .run();
-  });
-  console.log('[Renderer] Clip saved with watermark:', clipPath);
+  // Try with watermark first, fall back to plain cut if drawtext fails
+  try {
+    await new Promise((resolve, reject) => {
+      ffmpeg(fullVideoPath)
+        .setStartTime(startSec).setDuration(endSec - startSec)
+        .videoFilter(watermarkFilter)
+        .outputOptions(['-c:v libx264', '-c:a aac', '-b:a 192k', '-pix_fmt yuv420p',
+                        '-r 25', '-movflags +faststart'])
+        .output(clipPath)
+        .on('end', resolve)
+        .on('error', (err) => reject(err))
+        .run();
+    });
+    console.log('[Renderer] Clip saved with watermark:', clipPath);
+  } catch (watermarkErr) {
+    console.warn('[Renderer] Watermark failed, cutting without it:', watermarkErr.message);
+    await new Promise((resolve, reject) => {
+      ffmpeg(fullVideoPath)
+        .setStartTime(startSec).setDuration(endSec - startSec)
+        .outputOptions(['-c:v libx264', '-c:a aac', '-b:a 192k', '-pix_fmt yuv420p',
+                        '-r 25', '-movflags +faststart'])
+        .output(clipPath)
+        .on('end', resolve)
+        .on('error', (err) => reject(err))
+        .run();
+    });
+    console.log('[Renderer] Clip saved without watermark:', clipPath);
+  }
   return clipPath;
 }
 
