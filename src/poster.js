@@ -92,19 +92,19 @@ async function postDailyVideo(video) {
 }
 
 // Schedule 6 clips throughout the day via Buffer
-// CST post times: 7:30, 9:15, 11:45, 14:00, 16:30, 20:00
-// UTC (CDT +5):  12:30, 14:15, 16:45, 19:00, 21:30, 01:00
+// CDT post times: 7:00, 10:00, 13:00, 16:00, 19:00, 22:00
+// UTC (CDT +5):   12:00, 15:00, 18:00, 21:00, 00:00, 03:00
 async function postClips(video, clips) {
   if (!clips?.length) { console.warn('[Buffer] No clips'); return []; }
 
-  const POST_TIMES_UTC = ['12:30', '14:15', '16:45', '19:00', '21:30', '01:00'];
+  const POST_TIMES_UTC = ['12:00', '15:00', '18:00', '21:00', '00:00', '03:00'];
   const now = new Date();
   const results = [];
 
   for (let i = 0; i < Math.min(clips.length, 6); i++) {
     const clip   = clips[i];
     const [h, m] = POST_TIMES_UTC[i].split(':').map(Number);
-    const dayOff = h < 5 ? 1 : 0; // 01:00 UTC is next day
+    const dayOff = h < 6 ? 1 : 0; // 00:00 and 03:00 UTC are next calendar day
     const dueAt  = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOff, h, m, 0)).toISOString();
 
     const topicTag = (video.topicName || '').replace(/[\s&]+/g, '').replace(/[^a-zA-Z]/g, '');
