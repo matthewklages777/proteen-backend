@@ -91,13 +91,18 @@ async function postDailyVideo(video) {
   return results;
 }
 
-// Schedule 6 clips throughout the day via Buffer
-// CDT post times: 7:00, 10:00, 13:00, 16:00, 19:00, 22:00
-// UTC (CDT +5):   12:00, 15:00, 18:00, 21:00, 00:00, 03:00
+// Schedule 6 clips at peak engagement times for teen audience (CDT)
+// 7:00 AM  — morning phone check before school
+// 11:30 AM — lunch break scroll
+// 3:30 PM  — just out of school, high energy
+// 5:30 PM  — after-school wind-down
+// 8:00 PM  — prime evening scroll (highest teen engagement)
+// 10:00 PM — before bed (teens stay up late)
+// UTC (CDT = UTC-5): 12:00, 16:30, 20:30, 22:30, 01:00, 03:00
 async function postClips(video, clips) {
   if (!clips?.length) { console.warn('[Buffer] No clips'); return []; }
 
-  const POST_TIMES_UTC = ['12:00', '15:00', '18:00', '21:00', '00:00', '03:00'];
+  const POST_TIMES_UTC = ['12:00', '16:30', '20:30', '22:30', '01:00', '03:00'];
   const now = new Date();
   const results = [];
 
