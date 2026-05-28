@@ -443,6 +443,23 @@ app.get('/admin/api/debug-env', adminAuth, (req, res) => {
   });
 });
 
+// Test FFmpeg clip cutting directly
+app.get('/admin/api/test-ffmpeg', adminAuth, async (req, res) => {
+  try {
+    const { renderClip } = require('./videoRenderer');
+    const video = videoDB.getToday();
+    if (!video || !video.videoPath) return res.json({ error: 'No video today' });
+    const testClipId = `${video.id}_test`;
+    console.log('[Test] Running FFmpeg clip cut on:', video.videoPath);
+    await renderClip(video.videoPath, 10, 40, testClipId);
+    const clipUrl = `${process.env.BACKEND_URL || 'https://proteen-backend-production.up.railway.app'}/videos/${testClipId}_clip.mp4`;
+    res.json({ success: true, clipUrl, videoPath: video.videoPath });
+  } catch (err) {
+    console.error('[Test] FFmpeg test failed:', err.message);
+    res.json({ success: false, error: err.message, stack: err.stack });
+  }
+});
+
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/admin.html'));
 });
