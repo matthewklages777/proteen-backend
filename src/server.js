@@ -428,7 +428,50 @@ app.get('/admin/api/health', adminAuth, async (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'ProTeen Nation Backend', time: new Date().toISOString() });
+  res.json({ status: 'ok', service: 'ProTeen Nation Backend', time: new Date().toISOString(), version: '2026-05-29-v2' });
+});
+
+// Quick FFmpeg availability check — no auth required for diagnosis
+app.get('/diag/ffmpeg', async (req, res) => {
+  const { execFile } = require('child_process');
+  const ffmpegPath = require('ffmpeg-static');
+  execFile(ffmpegPath, ['-version'], { timeout: 10000 }, (err, stdout, stderr) => {
+    if (err) return res.json({ available: false, error: err.message, stderr });
+    const version = (stdout || stderr || '').split('\n')[0];
+    res.json({ available: true, version, path: ffmpegPath });
+  });
+});
+
+// Quick clip cut test using real video
+app.get('/diag/clip-test', adminAuth, async (req, res) => {
+  try {
+    const video = videoDB.getToday();
+    if (!video || !video.videoPath) return res.json({ error: 'No video today', hint: 'Generate a video first' });
+
+    const { execFile } = require('child_process');
+    const ffmpegPath = require('ffmpeg-static');
+    const outputPath = video.videoPath.replace('.mp4', '_diagclip.mp4');
+
+    await new Promise((resolve, reject) => {
+      execFile(ffmpegPath, [
+        '-y', '-ss', '5', '-t', '10',
+        '-i', video.videoPath,
+        '-c:v', 'libx264', '-c:a', 'aac', '-b:a', '128k', '-pix_fmt', 'yuv420p',
+        outputPath,
+      ], { timeout: 60000 }, (err, stdout, stderr) => {
+        if (err) reject(new Error(stderr || err.message));
+        else resolve();
+      });
+    });
+
+    const fs = require('fs');
+    const exists = fs.existsSync(outputPath);
+    const size = exists ? fs.statSync(outputPath).size : 0;
+    const clipUrl = `${process.env.BACKEND_URL || 'https://proteen-backend-production.up.railway.app'}/videos/${require('path').basename(outputPath)}`;
+    res.json({ success: true, exists, size, clipUrl, videoPath: video.videoPath });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
 });
 
 app.get('/admin/api/debug-env', adminAuth, (req, res) => {
