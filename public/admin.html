@@ -316,29 +316,24 @@ function refreshStats() {
 
 function renderVideoPanel() {
   const content = document.getElementById('mainContent');
-  content.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:24px;">
-      <div>
-        <h2 style="font-family:'Playfair Display',serif;font-size:24px;margin-bottom:4px;">🎬 Daily Video</h2>
-        <p style="color:var(--gray);font-size:14px;">Today's video, clips, and social posting controls.</p>
-      </div>
-      <button onclick="generateVideo()" style="background:var(--gold);color:#000;border:none;padding:11px 22px;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;white-space:nowrap;">
-        ⚡ Generate Today's Video
-      </button>
-    </div>
-    <div id="videoPanelBody"><div class="empty-state"><div class="empty-icon">⏳</div><h3 class="empty-title">Loading...</h3></div></div>`;
+  content.innerHTML = '<h2 style="font-family:\'Playfair Display\',serif;font-size:24px;margin-bottom:6px;">🎬 Daily Video</h2>'
+    + '<p style="color:var(--gray);font-size:14px;margin-bottom:28px;">Today\'s video and social posting controls.</p>'
+    + '<div id="videoPanelBody"><div class="empty-state"><div class="empty-icon">⏳</div><h3 class="empty-title">Loading...</h3></div></div>';
 
   fetch('/api/video/today')
     .then(r => r.json())
     .then(data => {
       const panel = document.getElementById('videoPanelBody');
+      const genBtn = '<div style="margin-bottom:20px;">'
+        + '<button onclick="generateVideo()" style="background:var(--gold);color:#000;border:none;padding:10px 22px;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;">'
+        + '⚡ Generate Today\'s Video</button></div>';
       if (!data.video) {
-        panel.innerHTML = `
-          <div style="background:var(--black2);border-radius:12px;padding:32px;text-align:center;border:0.5px solid rgba(255,255,255,0.07);">
-            <div style="font-size:48px;margin-bottom:16px;">📭</div>
-            <h3 style="margin-bottom:10px;">No video generated yet today</h3>
-            <p style="color:var(--gray);font-size:14px;margin-bottom:20px;">The cron runs automatically at 5 AM UTC. Hit the button above to generate one now.</p>
-          </div>`;
+        panel.innerHTML = genBtn
+          + '<div style="background:var(--black3);border-radius:12px;padding:32px;text-align:center;border:0.5px solid rgba(255,255,255,0.07);">'
+          + '<div style="font-size:48px;margin-bottom:16px;">📭</div>'
+          + '<h3 style="margin-bottom:10px;">No video generated yet today</h3>'
+          + '<p style="color:var(--gray);font-size:14px;">The cron runs automatically at 5 AM UTC.</p>'
+          + '</div>';
         return;
       }
 
@@ -356,8 +351,8 @@ function renderVideoPanel() {
       const mins = Math.floor((v.durationSecs||0) / 60);
       const secs = (v.durationSecs||0) % 60;
 
-      panel.innerHTML =
-        '<div style="background:var(--black2);border-radius:14px;padding:24px;margin-bottom:24px;border:0.5px solid rgba(232,184,75,0.2);">'
+      panel.innerHTML = genBtn
+        + '<div style="background:var(--black2);border-radius:14px;padding:24px;margin-bottom:24px;border:0.5px solid rgba(232,184,75,0.2);">'
         + '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:16px;">'
         + '<div>'
         + '<p style="font-size:11px;color:var(--gold);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px;">' + v.topicName + ' · ' + dateStr + '</p>'
