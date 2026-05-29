@@ -156,11 +156,14 @@ async function postClips(video, clips) {
     const dueAt = slotTime.toISOString();
 
     const topicTag = (video.topicName || '').replace(/[\s&]+/g, '').replace(/[^a-zA-Z]/g, '');
-    const caption  = clip.caption || `"${video.title}" 🔥\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag}`;
+    const fullCaption   = clip.caption || `"${video.title}" 🔥\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag}`;
+    // Twitter/X hard limit is 280 characters — truncate with ellipsis if needed
+    const twitterCaption = fullCaption.length > 275 ? fullCaption.slice(0, 272) + '...' : fullCaption;
 
     console.log(`[Buffer] Scheduling clip ${i + 1}/6 at ${slotTime.toISOString()} to all channels`);
     const clipResults = {};
     for (const [platform, channelId] of Object.entries(CHANNELS)) {
+      const caption = platform === 'twitter' ? twitterCaption : fullCaption;
       clipResults[platform] = await schedulePost({ channelId, text: caption, mediaUrl: clip.clipUrl, dueAt, platform, videoTitle: video.title, isClip: true });
       await delay(600);
     }
