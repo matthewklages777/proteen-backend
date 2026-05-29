@@ -350,49 +350,57 @@ async function renderStaticFallback(audioPath, videoRecord, videoPath, tmpDir) {
 
 async function renderClip(fullVideoPath, startSec, endSec, clipId) {
   const clipPath = path.join(VIDEO_DIR, clipId + '_clip.mp4');
+  const duration = endSec - startSec;
 
-  // Burn watermark into clips so every share drives traffic back
-  // drawtext: top-left "@ProTeenNation", bottom-center "proteennation.com"
-  const fontcolor = 'white@0.85';
-  const shadowcolor = 'black@0.6';
-  const shadow = ':shadowx=2:shadowy=2';
+  // Use child_process.execFile directly — more reliable than fluent-ffmpeg for simple cuts
+  const { execFile } = require('child_process');
 
-  const watermarkFilter = [
-    // Top-left brand handle — no font specified so ffmpeg uses built-in default
-    `drawtext=text='@ProTeenNation':fontsize=38:fontcolor=${fontcolor}:shadowcolor=${shadowcolor}${shadow}:x=28:y=28`,
-    // Bottom-center CTA
-    `drawtext=text='proteennation.com':fontsize=32:fontcolor=${fontcolor}:shadowcolor=${shadowcolor}${shadow}:x=(w-text_w)/2:y=h-56`,
-  ].join(',');
+  const runFfmpeg = (args, timeoutMs = 120000) => new Promise((resolve, reject) => {
+    const proc = execFile(ffmpegPath, args, { timeout: timeoutMs }, (err, stdout, stderr) => {
+      if (err) {
+        reject(new Error(stderr || err.message));
+      } else {
+        resolve();
+      }
+    });
+  });
 
-  // Try with watermark first, fall back to plain cut if drawtext fails
+  // Try 1: stream copy (fastest — no re-encode, no watermark)
   try {
-    await new Promise((resolve, reject) => {
-      ffmpeg(fullVideoPath)
-        .setStartTime(startSec).setDuration(endSec - startSec)
-        .videoFilter(watermarkFilter)
-        .outputOptions(['-c:v libx264', '-c:a aac', '-b:a 192k', '-pix_fmt yuv420p',
-                        '-r 25', '-movflags +faststart'])
-        .output(clipPath)
-        .on('end', resolve)
-        .on('error', (err) => reject(err))
-        .run();
-    });
-    console.log('[Renderer] Clip saved with watermark:', clipPath);
-  } catch (watermarkErr) {
-    console.warn('[Renderer] Watermark failed, cutting without it:', watermarkErr.message);
-    await new Promise((resolve, reject) => {
-      ffmpeg(fullVideoPath)
-        .setStartTime(startSec).setDuration(endSec - startSec)
-        .outputOptions(['-c:v libx264', '-c:a aac', '-b:a 192k', '-pix_fmt yuv420p',
-                        '-r 25', '-movflags +faststart'])
-        .output(clipPath)
-        .on('end', resolve)
-        .on('error', (err) => reject(err))
-        .run();
-    });
-    console.log('[Renderer] Clip saved without watermark:', clipPath);
+    await runFfmpeg([
+      '-y',
+      '-ss', String(startSec),
+      '-t',  String(duration),
+      '-i',  fullVideoPath,
+      '-c', 'copy',
+      '-movflags', '+faststart',
+      clipPath,
+    ]);
+    console.log('[Renderer] Clip saved (stream copy):', clipPath);
+    return clipPath;
+  } catch (copyErr) {
+    console.warn('[Renderer] Stream copy failed, re-encoding:', copyErr.message);
   }
-  return clipPath;
+
+  // Try 2: re-encode (handles any codec issues)
+  try {
+    await runFfmpeg([
+      '-y',
+      '-ss', String(startSec),
+      '-t',  String(duration),
+      '-i',  fullVideoPath,
+      '-c:v', 'libx264', '-preset', 'fast',
+      '-c:a', 'aac', '-b:a', '128k',
+      '-pix_fmt', 'yuv420p',
+      '-movflags', '+faststart',
+      clipPath,
+    ]);
+    console.log('[Renderer] Clip saved (re-encode):', clipPath);
+    return clipPath;
+  } catch (encodeErr) {
+    console.error('[Renderer] All clip methods failed:', encodeErr.message);
+    throw encodeErr;
+  }
 }
 
 module.exports = { renderVideo, renderClip };

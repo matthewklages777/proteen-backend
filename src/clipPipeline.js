@@ -164,8 +164,10 @@ async function runClipPipeline(video) {
     return;
   }
 
-  // Step 2: Cut all 6 clips
+  // Step 2: Cut all 6 clips (fall back to full video URL if FFmpeg fails)
   const readyClips = [];
+  let ffmpegWorking = true;
+
   for (let i = 0; i < clipMoments.length; i++) {
     const clip    = clipMoments[i];
     const clipId  = `${video.id}_clip${i + 1}`;
@@ -173,25 +175,36 @@ async function runClipPipeline(video) {
     const endSec   = Math.min(video.durationSecs, Math.ceil(clip.endSec || startSec + 30));
 
     console.log(`[ClipPipeline] Cutting clip ${i + 1}/6: ${startSec}s–${endSec}s (${clip.type})`);
-    try {
-      await renderClip(video.videoPath, startSec, endSec, clipId);
-      const clipUrl = `${BACKEND_URL}/videos/${clipId}_clip.mp4`;
-      const caption = await generateCaption(clip, 'general', video);
-      readyClips.push({ clip, clipUrl, caption, index: i + 1 });
-      console.log(`[ClipPipeline] Clip ${i + 1} ready: ${clipUrl}`);
-    } catch (err) {
-      console.error(`[ClipPipeline] Failed to cut clip ${i + 1}:`, err.message);
+
+    let clipUrl;
+    if (ffmpegWorking) {
+      try {
+        await renderClip(video.videoPath, startSec, endSec, clipId);
+        clipUrl = `${BACKEND_URL}/videos/${clipId}_clip.mp4`;
+        console.log(`[ClipPipeline] Clip ${i + 1} ready: ${clipUrl}`);
+      } catch (err) {
+        console.warn(`[ClipPipeline] FFmpeg failed on clip ${i + 1}, using full video URL:`, err.message);
+        ffmpegWorking = false;
+        clipUrl = video.videoUrl; // fallback: post the full video
+      }
+    } else {
+      // FFmpeg already failed — just reuse the full video URL for remaining clips
+      clipUrl = video.videoUrl;
+      console.log(`[ClipPipeline] Using full video URL for clip ${i + 1} (FFmpeg unavailable)`);
     }
+
+    const caption = await generateCaption(clip, 'general', video);
+    readyClips.push({ clip, clipUrl, caption, index: i + 1 });
   }
 
-  console.log(`[ClipPipeline] ${readyClips.length} clips cut. Scheduling via Buffer...`);
+  console.log(`[ClipPipeline] ${readyClips.length} posts ready (ffmpegWorking=${ffmpegWorking}). Scheduling via Buffer...`);
 
-  // Step 3: Schedule all clips via Buffer (spreads posts throughout the day automatically)
+  // Step 3: Schedule all posts via Buffer (spreads posts throughout the day automatically)
   try {
     const { postClips } = require('./poster');
     const bufferClips = readyClips.map(c => ({ clipUrl: c.clipUrl, caption: c.caption }));
     await postClips(video, bufferClips);
-    console.log('[ClipPipeline] All clips scheduled in Buffer ✅');
+    console.log('[ClipPipeline] All posts scheduled in Buffer ✅');
   } catch (err) {
     console.error('[ClipPipeline] Buffer scheduling failed:', err.message);
   }
