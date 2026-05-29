@@ -33,12 +33,20 @@ const MUTATION = `
 async function bufferQuery(variables) {
   const token = process.env.BUFFER_ACCESS_TOKEN;
   if (!token) throw new Error('BUFFER_ACCESS_TOKEN not set in Railway variables');
-  const res = await axios.post(BUFFER_API,
-    { query: MUTATION, variables },
-    { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 30000 }
-  );
-  if (res.data.errors) throw new Error(res.data.errors[0].message);
-  return res.data.data;
+  try {
+    const res = await axios.post(BUFFER_API,
+      { query: MUTATION, variables },
+      { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 30000 }
+    );
+    if (res.data.errors) throw new Error(res.data.errors[0].message);
+    return res.data.data;
+  } catch (err) {
+    // Expose the full response body so we can see Buffer's actual error
+    if (err.response) {
+      throw new Error(`Buffer HTTP ${err.response.status}: ${JSON.stringify(err.response.data)}`);
+    }
+    throw err;
+  }
 }
 
 // Schedule a single post to one Buffer channel
