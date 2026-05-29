@@ -54,13 +54,17 @@ async function schedulePost({ channelId, text, mediaUrl, dueAt, platform, videoT
     assets: mediaUrl ? [{ video: { url: mediaUrl } }] : [],
   };
 
-  // Platform-specific required fields for video posts
-  if (platform === 'instagram' || platform === 'facebook') {
-    input.type = 'reel';
-  }
-  if (platform === 'youtube') {
-    input.title = videoTitle ? videoTitle.slice(0, 100) : text.split('\n')[0].slice(0, 100);
-    input.category = '24'; // Entertainment
+  // Platform-specific metadata (required by Buffer GraphQL API)
+  // Type field lives inside metadata.{platform}, not at top level
+  const ytTitle = videoTitle ? videoTitle.slice(0, 100) : text.split('\n')[0].slice(0, 100);
+  if (platform === 'instagram') {
+    input.metadata = { instagram: { type: 'reel' } };
+  } else if (platform === 'facebook') {
+    input.metadata = { facebook: { type: 'reel' } };
+  } else if (platform === 'youtube') {
+    input.metadata = { youtube: { title: ytTitle, categoryId: '24' } }; // 24 = Entertainment
+  } else if (platform === 'tiktok') {
+    input.metadata = { tiktok: {} };
   }
 
   try {
