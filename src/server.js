@@ -1,3 +1,4 @@
+// build: 2026-05-29-v3
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -428,7 +429,7 @@ app.get('/admin/api/health', adminAuth, async (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'ProTeen Nation Backend', time: new Date().toISOString(), version: '2026-05-29-v2' });
+  res.json({ status: 'ok', service: 'ProTeen Nation Backend', time: new Date().toISOString(), version: '2026-05-29-v3' });
 });
 
 // Quick FFmpeg availability check — no auth required for diagnosis
@@ -504,6 +505,8 @@ app.get('/admin/api/test-ffmpeg', adminAuth, async (req, res) => {
 });
 
 app.get('/admin', (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.set('Pragma', 'no-cache');
   res.sendFile(path.join(__dirname, '../public/admin.html'));
 });
 
