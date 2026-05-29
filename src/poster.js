@@ -42,13 +42,15 @@ async function bufferQuery(variables) {
 }
 
 // Schedule a single post to one Buffer channel
+// If dueAt is in the past (or not provided), falls back to adding to Buffer queue
 async function schedulePost({ channelId, text, mediaUrl, dueAt }) {
+  const inFuture = dueAt && new Date(dueAt).getTime() > Date.now() + 60000; // must be >1 min future
   const input = {
     channelId,
     text,
     schedulingType: 'automatic',
-    mode: dueAt ? 'customScheduled' : 'addToQueue',
-    ...(dueAt ? { dueAt } : {}),
+    mode: inFuture ? 'customScheduled' : 'addToQueue',
+    ...(inFuture ? { dueAt } : {}),
     assets: mediaUrl ? [{ video: { url: mediaUrl } }] : [],
   };
 
@@ -56,8 +58,8 @@ async function schedulePost({ channelId, text, mediaUrl, dueAt }) {
     const data = await bufferQuery({ input });
     const result = data?.createPost;
     if (result?.post) {
-      console.log(`[Buffer] ✅ Post ${result.post.id} | Due: ${result.post.dueAt}`);
-      return { success: true, postId: result.post.id };
+      console.log(`[Buffer] ✅ Post ${result.post.id} | Due: ${result.post.dueAt || 'queued'}`);
+      return { success: true, postId: result.post.id, dueAt: result.post.dueAt };
     }
     console.warn('[Buffer] Error:', result?.message);
     return { success: false, reason: result?.message };
@@ -67,17 +69,24 @@ async function schedulePost({ channelId, text, mediaUrl, dueAt }) {
   }
 }
 
-// Post today's daily video to long-form channels at 6 AM CST (11:00 UTC CDT)
+// Post today's daily video to long-form channels at 6 AM CST (11:00 UTC)
+// If that slot has already passed, adds to Buffer queue instead
 async function postDailyVideo(video) {
   if (!video?.videoUrl) { console.warn('[Buffer] No videoUrl'); return {}; }
 
   const now = new Date();
-  const dueAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 11, 0, 0)).toISOString();
+  // Target 11:00 UTC (6 AM CST); if past, use tomorrow
+  let dueAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 11, 0, 0));
+  if (dueAt.getTime() <= Date.now() + 60000) {
+    // Already passed today — add to queue (Buffer picks next available slot)
+    dueAt = null;
+    console.log('[Buffer] 11:00 UTC slot passed — adding daily video to queue');
+  }
 
   const topicTag = (video.topicName || '').replace(/[\s&]+/g, '').replace(/[^a-zA-Z]/g, '');
   const caption  = `"${video.title}"\n\nToday's Daily Message — ProTeen Nation 🔥\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag} #Teens #Motivation`;
 
-  console.log('[Buffer] Scheduling daily video at', dueAt);
+  console.log('[Buffer] Scheduling daily video', dueAt ? `at ${dueAt.toISOString()}` : '(add to queue)');
   const results = {};
   for (const [platform, channelId] of Object.entries(CHANNELS)) {
     if (CLIP_ONLY_CHANNELS.includes(platform)) {
@@ -85,7 +94,7 @@ async function postDailyVideo(video) {
       results[platform] = { skipped: true, reason: 'clip-only platform' };
       continue;
     }
-    results[platform] = await schedulePost({ channelId, text: caption, mediaUrl: video.videoUrl, dueAt });
+    results[platform] = await schedulePost({ channelId, text: caption, mediaUrl: video.videoUrl, dueAt: dueAt?.toISOString() });
     await delay(600);
   }
   return results;
@@ -99,6 +108,7 @@ async function postDailyVideo(video) {
 // 8:00 PM  — prime evening scroll (highest teen engagement)
 // 10:00 PM — before bed (teens stay up late)
 // UTC (CDT = UTC-5): 12:00, 16:30, 20:30, 22:30, 01:00, 03:00
+// If a time slot has already passed today, uses the next day's slot OR adds to queue
 async function postClips(video, clips) {
   if (!clips?.length) { console.warn('[Buffer] No clips'); return []; }
 
@@ -109,13 +119,20 @@ async function postClips(video, clips) {
   for (let i = 0; i < Math.min(clips.length, 6); i++) {
     const clip   = clips[i];
     const [h, m] = POST_TIMES_UTC[i].split(':').map(Number);
-    const dayOff = h < 6 ? 1 : 0; // 00:00 and 03:00 UTC are next calendar day
-    const dueAt  = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOff, h, m, 0)).toISOString();
+    const dayOff = h < 6 ? 1 : 0; // 01:00 and 03:00 UTC are next calendar day
+
+    let slotTime = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOff, h, m, 0));
+    // If slot is already in the past, push it to the next day
+    if (slotTime.getTime() <= Date.now() + 60000) {
+      slotTime = new Date(slotTime.getTime() + 24 * 60 * 60 * 1000);
+      console.log(`[Buffer] Slot ${POST_TIMES_UTC[i]} UTC passed — rescheduled to tomorrow`);
+    }
+    const dueAt = slotTime.toISOString();
 
     const topicTag = (video.topicName || '').replace(/[\s&]+/g, '').replace(/[^a-zA-Z]/g, '');
     const caption  = clip.caption || `"${video.title}" 🔥\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag}`;
 
-    console.log(`[Buffer] Scheduling clip ${i + 1}/6 at ${POST_TIMES_UTC[i]} UTC to all channels`);
+    console.log(`[Buffer] Scheduling clip ${i + 1}/6 at ${slotTime.toISOString()} to all channels`);
     const clipResults = {};
     for (const [platform, channelId] of Object.entries(CHANNELS)) {
       clipResults[platform] = await schedulePost({ channelId, text: caption, mediaUrl: clip.clipUrl, dueAt });
