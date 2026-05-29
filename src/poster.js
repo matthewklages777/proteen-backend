@@ -43,7 +43,7 @@ async function bufferQuery(variables) {
 
 // Schedule a single post to one Buffer channel
 // If dueAt is in the past (or not provided), falls back to adding to Buffer queue
-async function schedulePost({ channelId, text, mediaUrl, dueAt }) {
+async function schedulePost({ channelId, text, mediaUrl, dueAt, platform, videoTitle }) {
   const inFuture = dueAt && new Date(dueAt).getTime() > Date.now() + 60000; // must be >1 min future
   const input = {
     channelId,
@@ -53,6 +53,15 @@ async function schedulePost({ channelId, text, mediaUrl, dueAt }) {
     ...(inFuture ? { dueAt } : {}),
     assets: mediaUrl ? [{ video: { url: mediaUrl } }] : [],
   };
+
+  // Platform-specific required fields for video posts
+  if (platform === 'instagram' || platform === 'facebook') {
+    input.type = 'reel';
+  }
+  if (platform === 'youtube') {
+    input.title = videoTitle ? videoTitle.slice(0, 100) : text.split('\n')[0].slice(0, 100);
+    input.category = '24'; // Entertainment
+  }
 
   try {
     const data = await bufferQuery({ input });
@@ -94,7 +103,7 @@ async function postDailyVideo(video) {
       results[platform] = { skipped: true, reason: 'clip-only platform' };
       continue;
     }
-    results[platform] = await schedulePost({ channelId, text: caption, mediaUrl: video.videoUrl, dueAt: dueAt?.toISOString() });
+    results[platform] = await schedulePost({ channelId, text: caption, mediaUrl: video.videoUrl, dueAt: dueAt?.toISOString(), platform, videoTitle: video.title });
     await delay(600);
   }
   return results;
@@ -135,7 +144,7 @@ async function postClips(video, clips) {
     console.log(`[Buffer] Scheduling clip ${i + 1}/6 at ${slotTime.toISOString()} to all channels`);
     const clipResults = {};
     for (const [platform, channelId] of Object.entries(CHANNELS)) {
-      clipResults[platform] = await schedulePost({ channelId, text: caption, mediaUrl: clip.clipUrl, dueAt });
+      clipResults[platform] = await schedulePost({ channelId, text: caption, mediaUrl: clip.clipUrl, dueAt, platform, videoTitle: video.title });
       await delay(600);
     }
     results.push({ clip: i + 1, dueAt, platforms: clipResults });
