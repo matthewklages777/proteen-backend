@@ -51,7 +51,7 @@ async function bufferQuery(variables) {
 
 // Schedule a single post to one Buffer channel
 // If dueAt is in the past (or not provided), falls back to adding to Buffer queue
-async function schedulePost({ channelId, text, mediaUrl, dueAt, platform, videoTitle }) {
+async function schedulePost({ channelId, text, mediaUrl, dueAt, platform, videoTitle, isClip = false }) {
   const inFuture = dueAt && new Date(dueAt).getTime() > Date.now() + 60000; // must be >1 min future
   const input = {
     channelId,
@@ -63,14 +63,19 @@ async function schedulePost({ channelId, text, mediaUrl, dueAt, platform, videoT
   };
 
   // Platform-specific metadata (required by Buffer GraphQL API)
-  // Type field lives inside metadata.{platform}, not at top level
+  // isClip: true means this is a short clip (≤60s) eligible for Shorts/Reels
   const ytTitle = videoTitle ? videoTitle.slice(0, 100) : text.split('\n')[0].slice(0, 100);
   if (platform === 'instagram') {
-    input.metadata = { instagram: { type: 'reel' } };
+    // Reels support up to 15 min — shouldShareToFeed is required
+    input.metadata = { instagram: { type: 'reel', shouldShareToFeed: true } };
   } else if (platform === 'facebook') {
-    input.metadata = { facebook: { type: 'reel' } };
+    // Full video (>90s) must use 'post' type — Reels are 90s max
+    // For clips (≤90s), caller should pass isClip: true
+    input.metadata = { facebook: { type: isClip ? 'reel' : 'post' } };
   } else if (platform === 'youtube') {
-    input.metadata = { youtube: { title: ytTitle, categoryId: '24' } }; // 24 = Entertainment
+    // Shorts limit is 3 min — skip full video for YouTube, only clips work as Shorts
+    if (!isClip) return { skipped: true, reason: 'Full video too long for YouTube Shorts — post clips instead' };
+    input.metadata = { youtube: { title: ytTitle, categoryId: '24' } };
   } else if (platform === 'tiktok') {
     input.metadata = { tiktok: {} };
   }
@@ -156,7 +161,7 @@ async function postClips(video, clips) {
     console.log(`[Buffer] Scheduling clip ${i + 1}/6 at ${slotTime.toISOString()} to all channels`);
     const clipResults = {};
     for (const [platform, channelId] of Object.entries(CHANNELS)) {
-      clipResults[platform] = await schedulePost({ channelId, text: caption, mediaUrl: clip.clipUrl, dueAt, platform, videoTitle: video.title });
+      clipResults[platform] = await schedulePost({ channelId, text: caption, mediaUrl: clip.clipUrl, dueAt, platform, videoTitle: video.title, isClip: true });
       await delay(600);
     }
     results.push({ clip: i + 1, dueAt, platforms: clipResults });
