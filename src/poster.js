@@ -95,14 +95,21 @@ async function schedulePost({ channelId, text, mediaUrl, dueAt, platform, videoT
   }
 }
 
-// Post today's daily video to long-form channels at 6 AM CST (11:00 UTC)
-// If that slot has already passed, adds to Buffer queue instead
+// Post today's daily video to long-form channels at 6 AM Central time
+// CDT (Mar–Nov) = UTC-5 → 11:00 UTC  |  CST (Nov–Mar) = UTC-6 → 12:00 UTC
+// If that slot has already passed today, adds to Buffer queue instead
 async function postDailyVideo(video) {
   if (!video?.videoUrl) { console.warn('[Buffer] No videoUrl'); return {}; }
 
   const now = new Date();
-  // Target 11:00 UTC (6 AM CST); if past, use tomorrow
-  let dueAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 11, 0, 0));
+  // Detect UTC offset for Central time (CDT = -5, CST = -6)
+  // Simple DST check: CDT runs second Sunday in March through first Sunday in November
+  const month = now.getUTCMonth() + 1; // 1-12
+  const isCDT = month >= 4 && month <= 10; // rough but accurate for scheduling purposes
+  const centralOffsetHours = isCDT ? 5 : 6;  // hours behind UTC
+  const targetUTCHour = 6 + centralOffsetHours; // 6 AM Central → 11 or 12 UTC
+  // Target 6:00 AM Central; if past, use tomorrow
+  let dueAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), targetUTCHour, 0, 0));
   if (dueAt.getTime() <= Date.now() + 60000) {
     // Already passed today — add to queue (Buffer picks next available slot)
     dueAt = null;
@@ -126,26 +133,33 @@ async function postDailyVideo(video) {
   return results;
 }
 
-// Schedule 6 clips at peak engagement times for teen audience (CDT)
+// Schedule 6 clips at peak engagement times for teen audience (Central time)
 // 7:00 AM  — morning phone check before school
 // 11:30 AM — lunch break scroll
 // 3:30 PM  — just out of school, high energy
 // 5:30 PM  — after-school wind-down
 // 8:00 PM  — prime evening scroll (highest teen engagement)
 // 10:00 PM — before bed (teens stay up late)
-// UTC (CDT = UTC-5): 12:00, 16:30, 20:30, 22:30, 01:00, 03:00
-// If a time slot has already passed today, uses the next day's slot OR adds to queue
+// If a time slot has already passed today, reschedules to next day
 async function postClips(video, clips) {
   if (!clips?.length) { console.warn('[Buffer] No clips'); return []; }
 
-  const POST_TIMES_UTC = ['12:00', '16:30', '20:30', '22:30', '01:00', '03:00'];
+  // Central times for each clip slot — stored as [hour, minute] in Central time
+  const POST_TIMES_CENTRAL = [[7,0],[11,30],[15,30],[17,30],[20,0],[22,0]];
   const now = new Date();
+  const month = now.getUTCMonth() + 1;
+  const isCDT = month >= 4 && month <= 10;
+  const centralOffsetHours = isCDT ? 5 : 6; // CDT=UTC-5, CST=UTC-6
+
   const results = [];
 
   for (let i = 0; i < Math.min(clips.length, 6); i++) {
     const clip   = clips[i];
-    const [h, m] = POST_TIMES_UTC[i].split(':').map(Number);
-    const dayOff = h < 6 ? 1 : 0; // 01:00 and 03:00 UTC are next calendar day
+    const [ch, cm] = POST_TIMES_CENTRAL[i];
+    const utcH = ch + centralOffsetHours; // convert Central hour to UTC
+    // Hours ≥ 24 wrap to next day
+    const dayOff = utcH >= 24 ? 1 : 0;
+    const [h, m] = [utcH % 24, cm];
 
     let slotTime = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOff, h, m, 0));
     // If slot is already in the past, push it to the next day
