@@ -316,8 +316,16 @@ function refreshStats() {
 
 function renderVideoPanel() {
   const content = document.getElementById('mainContent');
-  content.innerHTML = `<h2 style="font-family:'Playfair Display',serif;font-size:24px;margin-bottom:6px;">🎬 Daily Video</h2>
-    <p style="color:var(--gray);font-size:14px;margin-bottom:28px;">Today's video and clip download links. Files are available until the next Railway redeploy — download same-day.</p>
+  content.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:24px;">
+      <div>
+        <h2 style="font-family:'Playfair Display',serif;font-size:24px;margin-bottom:4px;">🎬 Daily Video</h2>
+        <p style="color:var(--gray);font-size:14px;">Today's video, clips, and social posting controls.</p>
+      </div>
+      <button onclick="generateVideo()" style="background:var(--gold);color:#000;border:none;padding:11px 22px;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;white-space:nowrap;">
+        ⚡ Generate Today's Video
+      </button>
+    </div>
     <div id="videoPanelBody"><div class="empty-state"><div class="empty-icon">⏳</div><h3 class="empty-title">Loading...</h3></div></div>`;
 
   fetch('/api/video/today')
@@ -329,8 +337,7 @@ function renderVideoPanel() {
           <div style="background:var(--black2);border-radius:12px;padding:32px;text-align:center;border:0.5px solid rgba(255,255,255,0.07);">
             <div style="font-size:48px;margin-bottom:16px;">📭</div>
             <h3 style="margin-bottom:10px;">No video generated yet today</h3>
-            <p style="color:var(--gray);font-size:14px;margin-bottom:20px;">Generate one now or wait for the 5 AM cron job.</p>
-            <button onclick="generateVideo()" style="background:var(--gold);color:#000;border:none;padding:10px 24px;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer;">⚡ Generate Now</button>
+            <p style="color:var(--gray);font-size:14px;margin-bottom:20px;">The cron runs automatically at 5 AM UTC. Hit the button above to generate one now.</p>
           </div>`;
         return;
       }
@@ -391,7 +398,7 @@ function renderVideoPanel() {
                 </a>
               </div>`).join('')}
           </div>
-          <p style="font-size:12px;color:rgba(255,255,255,0.25);margin-top:16px;text-align:center;">⚠️ Clips are stored on Railway's temporary filesystem — download before the next deploy.</p>
+          <p style="font-size:12px;color:rgba(255,255,255,0.25);margin-top:16px;text-align:center;">Clips persist on Railway Volume storage and survive deploys.</p>
         </div>
 
         <!-- Buffer social posting -->
@@ -408,12 +415,7 @@ function renderVideoPanel() {
           </div>
         </div>
 
-        <!-- Generate new video -->
-        <div style="margin-top:16px;text-align:center;">
-          <button onclick="generateVideo()" style="background:transparent;color:var(--gray);border:0.5px solid rgba(255,255,255,0.15);padding:9px 20px;border-radius:8px;font-size:13px;cursor:pointer;">
-            🔄 Regenerate today's video
-          </button>
-        </div>`;
+        `;
     })
     .catch(() => {
       document.getElementById('videoPanelBody').innerHTML = '<p style="color:var(--red);">Failed to load video data.</p>';
