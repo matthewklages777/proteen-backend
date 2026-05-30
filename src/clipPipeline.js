@@ -149,9 +149,15 @@ async function postClip(clipUrl, caption, platform, clip, video, scheduleTime) {
 }
 
 // ── Main: run the full clip pipeline for a video ──────────────────────────
-async function runClipPipeline(video) {
+async function runClipPipeline(video, { force = false } = {}) {
   if (!video || !video.videoPath || !video.script) {
     console.log('[ClipPipeline] No video or script — skipping');
+    return;
+  }
+
+  // Guard: don't double-schedule clips for the same video
+  if (!force && video.clipsScheduledAt) {
+    console.log('[ClipPipeline] Clips already scheduled for this video at', video.clipsScheduledAt, '— skipping. Pass force=true to override.');
     return;
   }
 
@@ -205,6 +211,10 @@ async function runClipPipeline(video) {
     const bufferClips = readyClips.map(c => ({ clipUrl: c.clipUrl, caption: c.caption }));
     await postClips(video, bufferClips);
     console.log('[ClipPipeline] All posts scheduled in Buffer ✅');
+    // Mark video so clips are never double-scheduled
+    const { videoDB } = require('./videoDatabase');
+    video.clipsScheduledAt = new Date().toISOString();
+    videoDB.saveVideo(video);
   } catch (err) {
     console.error('[ClipPipeline] Buffer scheduling failed:', err.message);
   }

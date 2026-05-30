@@ -231,9 +231,13 @@ app.post('/admin/api/buffer/post-clips', adminAuth, async (req, res) => {
   try {
     const video = videoDB.getToday();
     if (!video) return res.status(404).json({ success: false, error: 'No video for today' });
+    const force = req.query.force === 'true';
+    if (!force && video.clipsScheduledAt) {
+      return res.json({ success: false, error: `Clips already scheduled at ${video.clipsScheduledAt}. Add ?force=true to override.` });
+    }
     console.log('[Admin] Manually triggering clip pipeline for:', video.title);
     res.json({ success: true, message: 'Clip pipeline started in background' });
-    runClipPipeline(video).catch(err => console.error('[Admin] Clip pipeline error:', err.message));
+    runClipPipeline(video, { force }).catch(err => console.error('[Admin] Clip pipeline error:', err.message));
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
