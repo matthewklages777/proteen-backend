@@ -30,7 +30,7 @@ async function identifyClips(video) {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const prompt = `You are a social media editor for ProTeen Nation, a motivational platform for teenagers.
 
-Analyze this speech and identify the 6 BEST 30-second clip moments for Instagram Reels, YouTube Shorts, and TikTok.
+Analyze this speech and identify 6 DIFFERENT 30-second clip moments for Instagram Reels, YouTube Shorts, and TikTok.
 
 Video title: "${video.title}"
 Duration: ~${video.durationSecs} seconds
@@ -39,13 +39,18 @@ Script:
 ${video.script}
 ---
 
+CRITICAL RULES:
+- Each clip must be from a DIFFERENT part of the video — no two clips can overlap or cover the same moment
+- Spread clips across the full duration (beginning, early-middle, middle, late-middle, near-end, end)
+- Each clip must work as a standalone piece without needing context from the others
+- No two clips should have the same hookLine or feel like the same moment
+
 Pick moments that:
 - Start with a hook that grabs attention in the first 3 seconds
 - Are emotionally powerful or highly quotable
-- Work as standalone clips without needing context
-- Cover variety: opening hook, core message, emotional peak, challenge, quote, closing
+- Cover variety: opening hook, core lesson, emotional peak, challenge/call-to-action, powerful quote, closing
 
-Return ONLY valid JSON array of exactly 6 items:
+Return ONLY valid JSON array of exactly 6 items with NON-OVERLAPPING time ranges:
 [
   {
     "type": "hook",
@@ -63,9 +68,46 @@ Return ONLY valid JSON array of exactly 6 items:
       messages: [{ role: 'user', content: prompt }],
     });
     const text = msg.content[0].text.trim().replace(/```json|```/g, '').trim();
-    const clips = JSON.parse(text);
+    let clips = JSON.parse(text);
     console.log('[ClipPipeline] Identified', clips.length, 'clip moments');
-    return clips.slice(0, 6);
+
+    // Enforce non-overlapping: if two clips share >50% of their duration, drop the later one
+    // and replace it with a segment from a gap in the video
+    clips = clips.slice(0, 6).sort((a, b) => (a.startSec || 0) - (b.startSec || 0));
+    const nonOverlapping = [clips[0]];
+    for (let i = 1; i < clips.length; i++) {
+      const prev = nonOverlapping[nonOverlapping.length - 1];
+      const cur  = clips[i];
+      const overlapEnd = Math.min(prev.endSec || 0, cur.endSec || 0);
+      const overlapStart = Math.max(prev.startSec || 0, cur.startSec || 0);
+      const overlap = Math.max(0, overlapEnd - overlapStart);
+      const curDuration = (cur.endSec || 0) - (cur.startSec || 0);
+      if (overlap / Math.max(curDuration, 1) < 0.5) {
+        nonOverlapping.push(cur);
+      } else {
+        console.warn(`[ClipPipeline] Dropping overlapping clip ${i + 1} (${cur.startSec}–${cur.endSec})`);
+      }
+    }
+    // If we dropped any, fill gaps with evenly-spaced replacements
+    if (nonOverlapping.length < 6) {
+      const step = Math.floor(video.durationSecs / 7);
+      const usedStarts = new Set(nonOverlapping.map(c => Math.floor((c.startSec || 0) / step)));
+      const types = ['hook','lesson','quote','challenge','emotional','closing'];
+      for (let s = 1; s <= 6 && nonOverlapping.length < 6; s++) {
+        if (!usedStarts.has(s)) {
+          nonOverlapping.push({
+            type: types[nonOverlapping.length] || 'clip',
+            startSec: step * s - 15,
+            endSec: step * s + 15,
+            hookLine: video.title,
+            caption: `"${video.title}" — ProTeen Nation 🔥`,
+          });
+          usedStarts.add(s);
+        }
+      }
+    }
+
+    return nonOverlapping.slice(0, 6);
   } catch (err) {
     console.error('[ClipPipeline] Failed to identify clips:', err.message);
     // Fallback: evenly space 6 clips through the video
@@ -170,40 +212,51 @@ async function runClipPipeline(video, { force = false } = {}) {
     return;
   }
 
-  // Step 2: Cut all 6 clips (fall back to full video URL if FFmpeg fails)
+  // Verify the source video file exists before attempting any clip cuts
+  const fs = require('fs');
+  if (video.videoPath && !fs.existsSync(video.videoPath)) {
+    console.warn('[ClipPipeline] videoPath not found on disk:', video.videoPath, '— clips will use full video URL');
+  }
+
+  // Step 2: Cut all 6 clips — each clip is attempted independently.
+  // IMPORTANT: we track every URL we've already scheduled. If FFmpeg fails for a clip
+  // and the fallback URL is identical to a previous clip's URL, we skip that slot
+  // entirely rather than posting the same video twice in one day.
   const readyClips = [];
-  let ffmpegWorking = true;
+  const scheduledUrls = new Set();
 
   for (let i = 0; i < clipMoments.length; i++) {
-    const clip    = clipMoments[i];
-    const clipId  = `${video.id}_clip${i + 1}`;
+    const clip     = clipMoments[i];
+    const clipId   = `${video.id}_clip${i + 1}`;
     const startSec = Math.max(0, Math.floor(clip.startSec || 0));
     const endSec   = Math.min(video.durationSecs, Math.ceil(clip.endSec || startSec + 30));
 
     console.log(`[ClipPipeline] Cutting clip ${i + 1}/6: ${startSec}s–${endSec}s (${clip.type})`);
 
     let clipUrl;
-    if (ffmpegWorking) {
-      try {
-        await renderClip(video.videoPath, startSec, endSec, clipId);
-        clipUrl = `${BACKEND_URL}/videos/${clipId}_clip.mp4`;
-        console.log(`[ClipPipeline] Clip ${i + 1} ready: ${clipUrl}`);
-      } catch (err) {
-        console.warn(`[ClipPipeline] FFmpeg failed on clip ${i + 1}, using full video URL:`, err.message);
-        ffmpegWorking = false;
-        clipUrl = video.videoUrl; // fallback: post the full video
-      }
-    } else {
-      // FFmpeg already failed — just reuse the full video URL for remaining clips
-      clipUrl = video.videoUrl;
-      console.log(`[ClipPipeline] Using full video URL for clip ${i + 1} (FFmpeg unavailable)`);
+    try {
+      await renderClip(video.videoPath, startSec, endSec, clipId);
+      clipUrl = `${BACKEND_URL}/videos/${clipId}_clip.mp4`;
+      console.log(`[ClipPipeline] Clip ${i + 1} ready: ${clipUrl}`);
+    } catch (err) {
+      console.warn(`[ClipPipeline] FFmpeg failed on clip ${i + 1}:`, err.message);
+      clipUrl = video.videoUrl; // last-resort fallback: full video
+      console.log(`[ClipPipeline] Clip ${i + 1} fallback → full video URL`);
     }
 
-    const caption = await generateCaption(clip, 'general', video);
+    // Guard: never schedule the same URL into two different time slots
+    if (scheduledUrls.has(clipUrl)) {
+      console.warn(`[ClipPipeline] Clip ${i + 1} URL already used in an earlier slot — skipping to avoid duplicate post`);
+      continue;
+    }
+    scheduledUrls.add(clipUrl);
+
+    // Generate a clip-specific caption (use 'instagram' as the base platform style)
+    const caption = await generateCaption(clip, 'instagram', video);
     readyClips.push({ clip, clipUrl, caption, index: i + 1 });
   }
 
-  console.log(`[ClipPipeline] ${readyClips.length} posts ready (ffmpegWorking=${ffmpegWorking}). Scheduling via Buffer...`);
+  console.log(`[ClipPipeline] ${readyClips.length}/6 unique clips ready. Scheduling via Buffer...`);
 
   // Step 3: Schedule all posts via Buffer (spreads posts throughout the day automatically)
   try {
