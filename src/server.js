@@ -226,6 +226,53 @@ app.post('/admin/api/buffer/post-today', adminAuth, async (req, res) => {
   }
 });
 
+// One-time cleanup: delete duplicate Buffer posts, keeping newest per channel per time slot
+app.post('/admin/api/buffer/cleanup-duplicates', adminAuth, async (req, res) => {
+  const axios = require('axios');
+  const token = process.env.BUFFER_ACCESS_TOKEN;
+  if (!token) return res.status(500).json({ error: 'BUFFER_ACCESS_TOKEN not set' });
+
+  const ORG_ID = '6a0b4a9276619973c3a551a3';
+  try {
+    // Query all pending posts across all channels
+    const query = `query { organization(id: "${ORG_ID}") { channels { id name posts(status: scheduled, first: 200) { edges { node { id dueAt text } } } } } }`;
+    const resp = await axios.post('https://api.buffer.com/graphql', { query }, {
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 30000
+    });
+    const channels = resp.data?.data?.organization?.channels || [];
+
+    const MUTATION = `mutation DeletePost($id: String!) { deletePost(id: $id) { ... on PostActionSuccess { post { id } } ... on UnexpectedError { message } } }`;
+    let deleted = 0, kept = 0;
+
+    for (const channel of channels) {
+      const posts = (channel.posts?.edges || []).map(e => e.node);
+      // Group by time slot (round to nearest 30 min)
+      const groups = {};
+      for (const post of posts) {
+        const slotKey = Math.round(new Date(post.dueAt).getTime() / (30*60*1000));
+        if (!groups[slotKey]) groups[slotKey] = [];
+        groups[slotKey].push(post);
+      }
+      // For each slot, sort newest first, delete all but the first
+      for (const [, group] of Object.entries(groups)) {
+        group.sort((a, b) => new Date(b.dueAt) - new Date(a.dueAt)); // newest first? Actually keep earliest scheduled
+        // Keep first, delete rest
+        for (let i = 1; i < group.length; i++) {
+          await axios.post('https://api.buffer.com/graphql', { query: MUTATION, variables: { id: group[i].id } }, {
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 15000
+          });
+          deleted++;
+          await new Promise(r => setTimeout(r, 300));
+        }
+        kept++;
+      }
+    }
+    res.json({ success: true, deleted, kept, message: `Deleted ${deleted} duplicate posts, kept ${kept} slots` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Manually trigger Buffer clip pipeline for today's video
 app.post('/admin/api/buffer/post-clips', adminAuth, async (req, res) => {
   try {
