@@ -117,7 +117,12 @@ async function postDailyVideo(video) {
   }
 
   const topicTag = (video.topicName || '').replace(/[\s&]+/g, '').replace(/[^a-zA-Z]/g, '');
-  const caption  = `"${video.title}"\n\nToday's Daily Message — ProTeen Nation 🔥\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag} #Teens #Motivation`;
+
+  // Platform-specific captions for the full daily video post
+  const dailyCaptions = {
+    instagram: `"${video.title}"\n\nToday's Daily Message — ProTeen Nation 🔥\n\n💾 Save this for the days you need it most.\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag} #Teens #Motivation #DailyMotivation #YoungAndAmbitious #GrowthMindset #BelieveInYourself #YoungLeaders #InspirationalVideo #MotivationalSpeech #GenZ #TeenLife #Inspire #FutureIsNow #NeverGiveUp #SuccessMindset #Empowerment`,
+    facebook:  `"${video.title}"\n\nToday's Daily Message is here — and it's one you need to hear. 🔥\n\n👇 Tag a teen who needs this today.\n\nFollow ProTeen Nation for daily motivation built for the next generation.\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation`,
+  };
 
   console.log('[Buffer] Scheduling daily video', dueAt ? `at ${dueAt.toISOString()}` : '(add to queue)');
   const results = {};
@@ -127,25 +132,71 @@ async function postDailyVideo(video) {
       results[platform] = { skipped: true, reason: 'clip-only platform' };
       continue;
     }
+    const caption = dailyCaptions[platform] || dailyCaptions.instagram;
     results[platform] = await schedulePost({ channelId, text: caption, mediaUrl: video.videoUrl, dueAt: dueAt?.toISOString(), platform, videoTitle: video.title });
     await delay(600);
   }
   return results;
 }
 
-// Schedule 6 clips at peak engagement times for teen audience (Central time)
-// 7:00 AM  — morning phone check before school
-// 11:30 AM — lunch break scroll
-// 3:30 PM  — just out of school, high energy
-// 5:30 PM  — after-school wind-down
-// 8:00 PM  — prime evening scroll (highest teen engagement)
-// 10:00 PM — before bed (teens stay up late)
+// ── Platform-specific caption builder ─────────────────────────────────────
+// Tailors caption, hashtags, and CTA for each platform's algorithm.
+// Key insight: saves, comments, and shares are the top reach signals.
+function buildPlatformCaption(baseCaption, platform, video, clipIndex = 0) {
+  const topicTag = (video.topicName || '').replace(/[\s&]+/g, '').replace(/[^a-zA-Z]/g, '');
+  const hook = baseCaption || `"${video.title}"`;
+
+  // Rotate CTAs so each clip feels fresh — saves + comments + shares cover all 3 algorithm signals
+  const ctas = [
+    '💾 Save this for when you need it most.',
+    '👇 Tag someone who needs to hear this today.',
+    '💬 Drop your biggest goal in the comments — let\'s go!',
+    '🔁 Share this with someone who\'s going through it.',
+    '🔥 Follow ProTeen Nation for your daily dose of motivation.',
+    '💡 Save this — come back to it on your hardest day.',
+  ];
+  const cta = ctas[clipIndex % ctas.length];
+
+  if (platform === 'tiktok') {
+    // TikTok: short + FYP-targeting hashtags (algorithm reads first 5 tags heavily)
+    return `${hook}\n\n${cta}\n\n#ProTeenNation #WeAreTheFuture #fyp #foryoupage #teen #motivation #viral #teenlife #inspire #motivational`;
+
+  } else if (platform === 'instagram') {
+    // Instagram: 20–25 hashtags mixing reach sizes — large (discovery), medium (niche), small (loyal)
+    return `${hook}\n\n${cta}\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag} #Teens #Motivation #YoungAndAmbitious #TeenLife #MotivationalSpeech #GrowthMindset #BelieveInYourself #YoungMinds #TeenSuccess #DailyMotivation #InspireYouth #InspirationalVideo #YoungLeaders #FutureIsNow #ThinkBig #KeepGoing #NeverGiveUp #SuccessMindset #Empowerment #GenZ`;
+
+  } else if (platform === 'facebook') {
+    // Facebook: conversational tone, minimal hashtags — reach comes from shares here
+    return `${hook}\n\n${cta}\n\nFollow ProTeen Nation for daily motivation built for the next generation. 🔥\n\n#ProTeenNation #TeenMotivation #WeAreTheFuture`;
+
+  } else if (platform === 'youtube') {
+    // YouTube Shorts: description + subscribe CTA + relevant hashtags
+    return `${hook}\n\n${cta}\n\n🔔 Subscribe to ProTeen Nation — new motivation every single day!\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag} #Shorts #MotivationalSpeech #YoungAndAmbitious`;
+
+  } else if (platform === 'twitter') {
+    // X/Twitter: punchy, max 275 chars with hashtags
+    const base = `${hook}\n\n${cta}`;
+    const tags  = `\n\n#ProTeenNation #TeenMotivation #${topicTag}`;
+    const full  = base + tags;
+    return full.length > 275 ? full.slice(0, 272) + '...' : full;
+  }
+
+  return hook;
+}
+
+// Schedule 6 clips at peak teen engagement times (Central time, research-backed)
+// 6:30 AM  — early birds scrolling before school
+// 11:45 AM — lunch break (peak mid-day scroll)
+// 3:30 PM  — right after school, highest energy of the day
+// 5:30 PM  — after homework/practice, unwinding
+// 7:30 PM  — prime evening slot (consistently highest teen engagement across all platforms)
+// 9:30 PM  — before-bed scroll
 // If a time slot has already passed today, reschedules to next day
 async function postClips(video, clips) {
   if (!clips?.length) { console.warn('[Buffer] No clips'); return []; }
 
-  // Central times for each clip slot — stored as [hour, minute] in Central time
-  const POST_TIMES_CENTRAL = [[7,0],[11,30],[15,30],[17,30],[20,0],[22,0]];
+  // Peak teen engagement windows — Central time [hour, minute]
+  const POST_TIMES_CENTRAL = [[6,30],[11,45],[15,30],[17,30],[19,30],[21,30]];
   const now = new Date();
   const month = now.getUTCMonth() + 1;
   const isCDT = month >= 4 && month <= 10;
@@ -154,30 +205,24 @@ async function postClips(video, clips) {
   const results = [];
 
   for (let i = 0; i < Math.min(clips.length, 6); i++) {
-    const clip   = clips[i];
-    const [ch, cm] = POST_TIMES_CENTRAL[i];
-    const utcH = ch + centralOffsetHours; // convert Central hour to UTC
-    // Hours ≥ 24 wrap to next day
-    const dayOff = utcH >= 24 ? 1 : 0;
-    const [h, m] = [utcH % 24, cm];
+    const clip      = clips[i];
+    const [ch, cm]  = POST_TIMES_CENTRAL[i];
+    const utcH      = ch + centralOffsetHours;
+    const dayOff    = utcH >= 24 ? 1 : 0;
+    const [h, m]    = [utcH % 24, cm];
 
     let slotTime = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOff, h, m, 0));
-    // If slot is already in the past, push it to the next day
     if (slotTime.getTime() <= Date.now() + 60000) {
       slotTime = new Date(slotTime.getTime() + 24 * 60 * 60 * 1000);
       console.log(`[Buffer] Slot ${ch}:${cm < 10 ? '0'+cm : cm} Central passed — rescheduled to tomorrow`);
     }
     const dueAt = slotTime.toISOString();
 
-    const topicTag = (video.topicName || '').replace(/[\s&]+/g, '').replace(/[^a-zA-Z]/g, '');
-    const fullCaption   = clip.caption || `"${video.title}" 🔥\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag}`;
-    // Twitter/X hard limit is 280 characters — truncate with ellipsis if needed
-    const twitterCaption = fullCaption.length > 275 ? fullCaption.slice(0, 272) + '...' : fullCaption;
-
-    console.log(`[Buffer] Scheduling clip ${i + 1}/6 at ${slotTime.toISOString()} to all channels`);
+    console.log(`[Buffer] Scheduling clip ${i + 1}/6 at ${slotTime.toISOString()} (${ch}:${cm < 10 ? '0'+cm : cm} Central)`);
     const clipResults = {};
     for (const [platform, channelId] of Object.entries(CHANNELS)) {
-      const caption = platform === 'twitter' ? twitterCaption : fullCaption;
+      // Build a caption tailored to each platform's algorithm and audience behavior
+      const caption = buildPlatformCaption(clip.caption, platform, video, i);
       clipResults[platform] = await schedulePost({ channelId, text: caption, mediaUrl: clip.clipUrl, dueAt, platform, videoTitle: video.title, isClip: true });
       await delay(600);
     }

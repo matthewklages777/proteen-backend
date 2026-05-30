@@ -1,6 +1,6 @@
 {
   "name": "proteen-nation-backend",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "ProTeen Nation article mining, review queue, and admin API",
   "main": "src/server.js",
   "scripts": {

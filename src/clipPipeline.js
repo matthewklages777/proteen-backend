@@ -135,11 +135,17 @@ async function generateCaption(clip, platform, video) {
       max_tokens: 300,
       messages: [{
         role: 'user',
-        content: `Write a ${platformNames[platform]} caption for this ProTeen Nation clip.
+        content: `Write a powerful ${platformNames[platform]} caption for this ProTeen Nation motivational clip.
 Clip hook: "${clip.hookLine}"
 Topic: ${video.topicName}
-Keep it under ${maxLen} chars. Start strong. Add ${hashtagCount} hashtags at the end.
-Include #ProTeenNation #WeAreTheFuture. Return ONLY the caption text.`,
+
+Rules:
+- Open with the most compelling line from the clip — not a generic intro
+- Write for teenagers (13–19) — direct, real, no corporate speak
+- Under ${maxLen} characters total
+- End with ONE of these engagement CTAs (pick the most fitting): "💾 Save this.", "👇 Tag someone who needs this.", "💬 Tell me your biggest challenge below.", "🔁 Share this with someone going through it."
+- Add ${hashtagCount} hashtags at the end, include #ProTeenNation #WeAreTheFuture
+- Return ONLY the caption text, nothing else`,
       }],
     });
     return msg.content[0].text.trim();
