@@ -165,7 +165,7 @@ async function postClips(video, clips) {
     // If slot is already in the past, push it to the next day
     if (slotTime.getTime() <= Date.now() + 60000) {
       slotTime = new Date(slotTime.getTime() + 24 * 60 * 60 * 1000);
-      console.log(`[Buffer] Slot ${POST_TIMES_UTC[i]} UTC passed — rescheduled to tomorrow`);
+      console.log(`[Buffer] Slot ${ch}:${cm < 10 ? '0'+cm : cm} Central passed — rescheduled to tomorrow`);
     }
     const dueAt = slotTime.toISOString();
 
