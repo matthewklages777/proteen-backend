@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1080" height="1920" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1080" height="1920" fill="#000000"/>
+
+  <!-- Top gold bar -->
+  <rect x="0" y="0" width="1080" height="12" fill="#e8b84b"/>
+
+  <!-- ProTeen Nation -->
+  <text x="540" y="210" font-family="Georgia, serif" font-size="96" font-weight="bold" fill="#e8b84b" text-anchor="middle">ProTeen Nation</text>
+
+  <!-- Tagline -->
+  <text x="540" y="285" font-family="Arial, sans-serif" font-size="48" fill="#ffffff" text-anchor="middle">We Are The Future</text>
+
+  <!-- Divider -->
+  <line x1="160" y1="320" x2="920" y2="320" stroke="#e8b84b" stroke-width="2"/>
+
+  <!-- Topic label -->
+  <text x="540" y="940" font-family="Arial, sans-serif" font-size="52" font-weight="bold" fill="#e8b84b" text-anchor="middle">HEALTH &amp; FITNESS</text>
+
+  <!-- Speech title -->
+  <text x="540" y="1040" font-family="Georgia, serif" font-size="68" font-weight="bold" fill="#ffffff" text-anchor="middle">You have approximately 4,000</text>
+  <text x="540" y="1130" font-family="Georgia, serif" font-size="68" font-weight="bold" fill="#ffffff" text-anchor="middle">weeks to live – and right</text>
+  <text x="540" y="1220" font-family="Georgia, serif" font-size="68" font-weight="bold" fill="#ffffff" text-anchor="middle">now,</text>
+
+  <!-- Bottom gold bar -->
+  <rect x="0" y="1908" width="1080" height="12" fill="#e8b84b"/>
+</svg>

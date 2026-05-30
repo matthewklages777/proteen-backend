@@ -433,7 +433,7 @@ app.get('/admin/api/health', adminAuth, async (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'ProTeen Nation Backend', time: new Date().toISOString(), version: '2026-05-29-v3' });
+  res.json({ status: 'ok', service: 'ProTeen Nation Backend', time: new Date().toISOString(), version: '2026-05-30-v1' });
 });
 
 // Quick FFmpeg availability check — no auth required for diagnosis
