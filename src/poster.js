@@ -41,11 +41,91 @@ async function bufferQuery(variables) {
     if (res.data.errors) throw new Error(res.data.errors[0].message);
     return res.data.data;
   } catch (err) {
-    // Expose the full response body so we can see Buffer's actual error
     if (err.response) {
       throw new Error(`Buffer HTTP ${err.response.status}: ${JSON.stringify(err.response.data)}`);
     }
     throw err;
+  }
+}
+
+// ── Buffer housekeeping helpers ────────────────────────────────────────────
+
+async function fetchAllScheduledPosts() {
+  const token = process.env.BUFFER_ACCESS_TOKEN;
+  const query = `
+    query GetPosts($input: PostsInput!, $first: Int, $after: String) {
+      posts(input: $input, first: $first, after: $after) {
+        edges { node { id dueAt channelId createdAt } }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  `;
+  let all = [], cursor = null;
+  while (true) {
+    const vars = { input: { organizationId: ORG_ID, filter: { status: ['scheduled'] } }, first: 100 };
+    if (cursor) vars.after = cursor;
+    const res = await axios.post(BUFFER_API,
+      { query, variables: vars },
+      { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 30000 }
+    );
+    const data = res.data?.data;
+    if (res.data?.errors) throw new Error(res.data.errors[0].message);
+    all.push(...(data?.posts?.edges || []).map(e => e.node));
+    const pi = data?.posts?.pageInfo;
+    if (!pi?.hasNextPage) break;
+    cursor = pi.endCursor;
+  }
+  return all;
+}
+
+async function deleteBufferPost(postId) {
+  const token = process.env.BUFFER_ACCESS_TOKEN;
+  const query = `
+    mutation DeletePost($input: DeletePostInput!) {
+      deletePost(input: $input) {
+        ... on DeletePostSuccess { id }
+        ... on VoidMutationError { message }
+      }
+    }
+  `;
+  const res = await axios.post(BUFFER_API,
+    { query, variables: { input: { id: postId } } },
+    { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 30000 }
+  );
+  return res.data?.data?.deletePost;
+}
+
+// Clear any already-scheduled posts that fall within 25 minutes of our target clip slots.
+// Called before scheduling a fresh day's clips so old leftovers don't stack up.
+async function clearStaleClipSlots(targetSlotTimes) {
+  try {
+    const existing = await fetchAllScheduledPosts();
+    if (!existing.length) return 0;
+
+    const targets = targetSlotTimes.map(t => new Date(t).getTime());
+    const WINDOW_MS = 25 * 60 * 1000; // ±25 min window
+
+    const toDelete = existing.filter(p => {
+      const pt = new Date(p.dueAt).getTime();
+      return targets.some(t => Math.abs(pt - t) <= WINDOW_MS);
+    });
+
+    let deleted = 0;
+    for (const post of toDelete) {
+      try {
+        await deleteBufferPost(post.id);
+        deleted++;
+        console.log(`[Buffer] Cleared stale clip slot post ${post.id} @ ${post.dueAt}`);
+      } catch (err) {
+        console.warn(`[Buffer] Could not delete stale post ${post.id}:`, err.message);
+      }
+      await delay(300);
+    }
+    return deleted;
+  } catch (err) {
+    // Non-fatal — log and continue scheduling
+    console.warn('[Buffer] clearStaleClipSlots failed (non-fatal):', err.message);
+    return 0;
   }
 }
 
@@ -201,6 +281,22 @@ async function postClips(video, clips) {
   const month = now.getUTCMonth() + 1;
   const isCDT = month >= 4 && month <= 10;
   const centralOffsetHours = isCDT ? 5 : 6; // CDT=UTC-5, CST=UTC-6
+
+  // Pre-compute all target slot times so we can clear stale posts first
+  const slotTimes = [];
+  for (let i = 0; i < Math.min(clips.length, 6); i++) {
+    const [ch, cm] = POST_TIMES_CENTRAL[i];
+    const utcH     = ch + centralOffsetHours;
+    const dayOff   = utcH >= 24 ? 1 : 0;
+    const [h, m]   = [utcH % 24, cm];
+    let t = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOff, h, m, 0));
+    if (t.getTime() <= Date.now() + 60000) t = new Date(t.getTime() + 24 * 60 * 60 * 1000);
+    slotTimes.push(t.toISOString());
+  }
+
+  // Clear any leftover posts from previous days in these exact time slots
+  const cleared = await clearStaleClipSlots(slotTimes);
+  if (cleared > 0) console.log(`[Buffer] Cleared ${cleared} stale posts from previous day(s)`);
 
   const results = [];
 
