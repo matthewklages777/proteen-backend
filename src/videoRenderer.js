@@ -365,7 +365,35 @@ async function renderClip(fullVideoPath, startSec, endSec, clipId) {
     });
   });
 
-  // Try 1: stream copy (fastest — no re-encode, no watermark)
+  // Social-media optimised settings — keeps clips small so Buffer processes them fast.
+  // A 30-second 1080p clip at 3.5 Mbps video + 128k audio ≈ 13–15 MB.
+  // Buffer media processing timeouts are almost always caused by oversized files.
+  const SOCIAL_VIDEO_BITRATE = '3500k';
+  const SOCIAL_AUDIO_BITRATE = '128k';
+
+  // Try 1: re-encode at social bitrate (most reliable for Buffer compatibility)
+  try {
+    await runFfmpeg([
+      '-y',
+      '-ss', String(startSec),
+      '-t',  String(duration),
+      '-i',  fullVideoPath,
+      '-c:v', 'libx264', '-preset', 'fast',
+      '-b:v', SOCIAL_VIDEO_BITRATE,
+      '-maxrate', SOCIAL_VIDEO_BITRATE,
+      '-bufsize', '7000k',
+      '-c:a', 'aac', '-b:a', SOCIAL_AUDIO_BITRATE,
+      '-pix_fmt', 'yuv420p',
+      '-movflags', '+faststart',
+      clipPath,
+    ]);
+    console.log('[Renderer] Clip saved (social-optimised re-encode):', clipPath);
+    return clipPath;
+  } catch (encodeErr) {
+    console.warn('[Renderer] Re-encode failed, trying stream copy:', encodeErr.message);
+  }
+
+  // Try 2: stream copy fallback (preserves original bitrate but avoids any codec issue)
   try {
     await runFfmpeg([
       '-y',
@@ -376,30 +404,11 @@ async function renderClip(fullVideoPath, startSec, endSec, clipId) {
       '-movflags', '+faststart',
       clipPath,
     ]);
-    console.log('[Renderer] Clip saved (stream copy):', clipPath);
+    console.log('[Renderer] Clip saved (stream copy fallback):', clipPath);
     return clipPath;
   } catch (copyErr) {
-    console.warn('[Renderer] Stream copy failed, re-encoding:', copyErr.message);
-  }
-
-  // Try 2: re-encode (handles any codec issues)
-  try {
-    await runFfmpeg([
-      '-y',
-      '-ss', String(startSec),
-      '-t',  String(duration),
-      '-i',  fullVideoPath,
-      '-c:v', 'libx264', '-preset', 'fast',
-      '-c:a', 'aac', '-b:a', '128k',
-      '-pix_fmt', 'yuv420p',
-      '-movflags', '+faststart',
-      clipPath,
-    ]);
-    console.log('[Renderer] Clip saved (re-encode):', clipPath);
-    return clipPath;
-  } catch (encodeErr) {
-    console.error('[Renderer] All clip methods failed:', encodeErr.message);
-    throw encodeErr;
+    console.error('[Renderer] All clip methods failed:', copyErr.message);
+    throw copyErr;
   }
 }
 
