@@ -17,30 +17,36 @@ const LOGO_PATH  = path.join(ASSETS_DIR, 'logo.png');
 
 const SECS_PER_IMAGE = 3; // fast montage pacing
 
-// Topic-specific image queries — all scoped to teens and youth
+// Topic-specific image queries — tightly scoped to American teenagers
 const TOPIC_QUERIES = {
-  resilience:    'teenager determination resilience young person strength',
-  school:        'high school students studying graduation teen success',
-  relationships: 'teen friends laughing together youth friendship bonds',
-  faith:         'young person hope peaceful spiritual teen light',
-  sports:        'teen athlete training competition young champion',
-  health:        'teenager fitness running active healthy youth',
-  careers:       'young person ambition success teen goal dreaming',
-  civics:        'youth community leadership teen volunteer together',
+  resilience:    'american teen boy determination confident strong winning',
+  school:        'high school boy studying graduation american teen success',
+  relationships: 'american teen boys friends laughing hanging out locker room',
+  faith:         'american teen boy peaceful hope church sunrise cross',
+  sports:        'american teen boy athlete football basketball training champion',
+  health:        'american teen boy running fitness gym workout energy',
+  careers:       'american teen boy ambition entrepreneur business goal future',
+  civics:        'american teen boy community volunteer leadership flag service',
 };
 
-// Inspirational scenery + youth energy mixed into every video
+// Inspirational scenery and American youth energy mixed into every video
+// Queries are rotated randomly so images differ day to day
 const INSPIRATIONAL_QUERIES = [
-  'teenager silhouette sunset horizon',
-  'young people laughing city',
-  'teen walking mountain trail',
-  'youth sports team celebrate',
-  'young person ocean beach freedom',
-  'high school friends together night',
-  'teenager jumping city rooftop energy',
-  'young student graduation cap success',
-  'teen musician performer stage',
-  'youth group diverse friends smiling',
+  'american teenage boy sunset silhouette confident',
+  'high school boy friends laughing american town',
+  'teen boy walking trail mountain adventure',
+  'young boy sports team celebrate victory american',
+  'teenage boy beach ocean freedom sunrise',
+  'high school friends boys night game american',
+  'teen boy jumping skateboard city energy',
+  'young man graduation cap gown american school',
+  'teen boy guitar music performer stage spotlight',
+  'american teenage boy smiling confident portrait',
+  'boy running track field american high school',
+  'teen boy studying library books success',
+  'young american male student college campus',
+  'teen boy basketball court urban american city',
+  'high school boy locker room team spirit',
 ];
 
 function ensureDirs() {
@@ -178,16 +184,30 @@ async function buildOverlayPng(title, topicName, outputPath) {
     .toFile(outputPath);
 }
 
-// Fetch images from Pixabay for a given search query
+// Fetch images from Pixabay for a given search query.
+// Randomizes the page (1–5) on every call so we never get the same
+// batch of stock photos twice.
 async function fetchImages(query, count) {
   const apiKey = process.env.PIXABAY_API_KEY;
   if (!apiKey) throw new Error('PIXABAY_API_KEY not set');
-  const res = await axios.get('https://pixabay.com/api/', {
-    params: { key: apiKey, q: query, image_type: 'photo', orientation: 'vertical',
-              per_page: count, safesearch: true, min_width: 720 },
-    timeout: 15000,
-  });
-  return res.data.hits.map(p => p.largeImageURL);
+  // Random page 1–5 for variety; fall back to page 1 if a later page is empty
+  const randomPage = Math.floor(Math.random() * 5) + 1;
+  const tryPage = async (page) => {
+    const res = await axios.get('https://pixabay.com/api/', {
+      params: {
+        key: apiKey, q: query, image_type: 'photo', orientation: 'vertical',
+        per_page: count, safesearch: true, min_width: 720, page,
+      },
+      timeout: 15000,
+    });
+    return res.data.hits.map(p => p.largeImageURL);
+  };
+  const hits = await tryPage(randomPage).catch(() => []);
+  // If the random page returned nothing, fall back to page 1
+  if (hits.length === 0 && randomPage > 1) {
+    return tryPage(1).catch(() => []);
+  }
+  return hits;
 }
 
 // Fetch a rich mix: topic-specific + rotating inspirational imagery
