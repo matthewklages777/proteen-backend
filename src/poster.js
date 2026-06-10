@@ -4,6 +4,8 @@
 
 require('dotenv').config();
 const axios = require('axios');
+const Anthropic = require('@anthropic-ai/sdk');
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const BUFFER_API = 'https://api.buffer.com/graphql';
 const ORG_ID     = '6a0b4a9276619973c3a551a3';
@@ -198,12 +200,17 @@ async function postDailyVideo(video) {
 
   const topicTag = (video.topicName || '').replace(/[\s&]+/g, '').replace(/[^a-zA-Z]/g, '');
 
+  // Generate video-specific hashtags from Claude once for the daily video
+  console.log('[Buffer] Generating video-specific hashtags for daily post...');
+  const dailyVideoTags = await generateVideoHashtags(video);
+  console.log('[Buffer] Daily video tags:', dailyVideoTags.join(' '));
+
   // Platform-specific captions for the full daily video post
   const dailyIdx = new Date().getDay(); // rotate hashtag set by day of week
   const dailyCaptions = {
-    instagram: `"${video.title}"\n\nToday's Daily Message — ProTeen Nation 🔥\n\n💾 Save this for the days you need it most.\n\n${getHashtagSet('instagram', dailyIdx, video.topic)}`,
-    facebook:  `"${video.title}"\n\nToday's Daily Message is here — and it's one you need to hear. 🔥\n\n👇 Tag a teen who needs this today.\n\nFollow ProTeen Nation for daily motivation built for the next generation.\n\n${getHashtagSet('facebook', dailyIdx, video.topic)}`,
-    youtube:   `"${video.title}"\n\nToday's Daily Message — watch it, share it, come back to it. 🔥\n\n🔔 Subscribe for new motivation every single day!\n\n${getHashtagSet('youtube', dailyIdx, video.topic)}`,
+    instagram: `"${video.title}"\n\nToday's Daily Message — ProTeen Nation 🔥\n\n💾 Save this for the days you need it most.\n\n${getHashtagSet('instagram', dailyIdx, video.topic, dailyVideoTags)}`,
+    facebook:  `"${video.title}"\n\nToday's Daily Message is here — and it's one you need to hear. 🔥\n\n👇 Tag a teen who needs this today.\n\nFollow ProTeen Nation for daily motivation built for the next generation.\n\n${getHashtagSet('facebook', dailyIdx, video.topic, dailyVideoTags)}`,
+    youtube:   `"${video.title}"\n\nToday's Daily Message — watch it, share it, come back to it. 🔥\n\n🔔 Subscribe for new motivation every single day!\n\n${getHashtagSet('youtube', dailyIdx, video.topic, dailyVideoTags)}`,
   };
 
   console.log('[Buffer] Scheduling daily video', dueAt ? `at ${dueAt.toISOString()}` : '(add to queue)');
@@ -313,25 +320,77 @@ const HASHTAGS = {
   },
 };
 
-// Pick a rotating hashtag set — cycles through 3 banks so posts never look identical
-function getHashtagSet(platform, clipIndex, topicId) {
-  const bank    = HASHTAGS[platform] || HASHTAGS.instagram;
-  const setIdx  = clipIndex % bank.length;
-  const base    = bank[setIdx];
+// Ask Claude to generate 6-8 hashtags specific to this video's actual content.
+// Called once per video — result is reused across all clips and platforms.
+async function generateVideoHashtags(video) {
+  const title  = video.title  || '';
+  const script = video.script ? video.script.slice(0, 600) : '';
+  const topic  = video.topicName || video.topic || '';
+
+  if (!title) return [];
+
+  try {
+    const msg = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 200,
+      messages: [{
+        role: 'user',
+        content: `You are a social media hashtag specialist for ProTeen Nation, a motivational platform for American teenagers.
+
+Generate 8 hashtags that are SPECIFIC to this video's actual content — not generic motivation tags.
+Focus on the specific theme, lesson, action, or emotion in this video.
+
+Video title: "${title}"
+Topic: ${topic}
+Script excerpt: "${script}"
+
+Rules:
+- Each hashtag must relate directly to what THIS video is actually about
+- No generic tags like #Motivation #Teen #GenZ (those are added separately)
+- CamelCase, no spaces, no punctuation other than #
+- Mix specific concepts (e.g. #OvercomingRejection) with searchable terms (e.g. #CollegePrep)
+- Appropriate for teenagers aged 13-19
+
+Respond with ONLY a JSON array of 8 hashtag strings, e.g.:
+["#OvercomingFailure","#StudyHabits","#CollegeReady","#SelfDiscipline","#MorningRoutine","#AcademicSuccess","#MindOverMatter","#BuildingConfidence"]`,
+      }],
+    });
+
+    const text = msg.content[0].text.trim().replace(/```json|```/g, '').trim();
+    const tags = JSON.parse(text);
+    if (Array.isArray(tags)) return tags.slice(0, 8);
+    return [];
+  } catch (err) {
+    console.error('[Hashtags] Claude generation failed:', err.message);
+    return [];
+  }
+}
+
+// Pick a rotating hashtag set — cycles through 3 banks so posts never look identical.
+// videoTags: content-specific tags from Claude (generated once per video).
+function getHashtagSet(platform, clipIndex, topicId, videoTags = []) {
+  const bank        = HASHTAGS[platform] || HASHTAGS.instagram;
+  const setIdx      = clipIndex % bank.length;
+  const base        = bank[setIdx];
   const topicExtras = (HASHTAGS.topics[topicId] || []);
-  // Merge, dedupe, limit to platform max
-  const limits  = { tiktok: 25, instagram: 30, facebook: 12, youtube: 15, twitter: 4 };
-  const merged  = [...new Set([...base, ...topicExtras])].slice(0, limits[platform] || 25);
+  const limits      = { tiktok: 25, instagram: 30, facebook: 12, youtube: 15, twitter: 4 };
+  const limit       = limits[platform] || 25;
+
+  // Priority order: base platform tags → video-specific tags → topic tags
+  // Video-specific tags inserted after the first 5 platform tags so they appear early
+  const firstFive = base.slice(0, 5);
+  const rest      = base.slice(5);
+  const merged    = [...new Set([...firstFive, ...videoTags, ...rest, ...topicExtras])].slice(0, limit);
   return merged.join(' ');
 }
 
 // ── Platform-specific caption builder ─────────────────────────────────────
 // Tailors caption, hashtags, and CTA for each platform's algorithm.
 // Key insight: saves, comments, and shares are the top reach signals.
-function buildPlatformCaption(baseCaption, platform, video, clipIndex = 0) {
+function buildPlatformCaption(baseCaption, platform, video, clipIndex = 0, videoTags = []) {
   const topicId  = video.topic || '';
   const hook     = baseCaption || `"${video.title}"`;
-  const tags     = getHashtagSet(platform, clipIndex, topicId);
+  const tags     = getHashtagSet(platform, clipIndex, topicId, videoTags);
 
   // Rotate CTAs so each clip feels fresh — saves + comments + shares cover all 3 algorithm signals
   const ctas = [
@@ -378,6 +437,11 @@ function buildPlatformCaption(baseCaption, platform, video, clipIndex = 0) {
 async function postClips(video, clips) {
   if (!clips?.length) { console.warn('[Buffer] No clips'); return []; }
 
+  // Generate content-specific hashtags from Claude once — reused across all clips/platforms
+  console.log('[Buffer] Generating video-specific hashtags...');
+  const videoTags = await generateVideoHashtags(video);
+  console.log('[Buffer] Video-specific tags:', videoTags.join(' '));
+
   // Peak teen engagement windows — Central time [hour, minute]
   const POST_TIMES_CENTRAL = [[6,30],[11,45],[15,30],[17,30],[19,30],[21,30]];
   const now = new Date();
@@ -421,7 +485,7 @@ async function postClips(video, clips) {
     const clipResults = {};
     for (const [platform, channelId] of Object.entries(CHANNELS)) {
       // Build a caption tailored to each platform's algorithm and audience behavior
-      const caption = buildPlatformCaption(clip.caption, platform, video, i);
+      const caption = buildPlatformCaption(clip.caption, platform, video, i, videoTags);
       clipResults[platform] = await schedulePost({ channelId, text: caption, mediaUrl: clip.clipUrl, dueAt, platform, videoTitle: video.title, isClip: true });
       await delay(600);
     }
