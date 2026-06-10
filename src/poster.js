@@ -199,9 +199,11 @@ async function postDailyVideo(video) {
   const topicTag = (video.topicName || '').replace(/[\s&]+/g, '').replace(/[^a-zA-Z]/g, '');
 
   // Platform-specific captions for the full daily video post
+  const dailyIdx = new Date().getDay(); // rotate hashtag set by day of week
   const dailyCaptions = {
-    instagram: `"${video.title}"\n\nToday's Daily Message — ProTeen Nation 🔥\n\n💾 Save this for the days you need it most.\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag} #Teens #Motivation #DailyMotivation #YoungAndAmbitious #GrowthMindset #BelieveInYourself #YoungLeaders #InspirationalVideo #MotivationalSpeech #GenZ #TeenLife #Inspire #FutureIsNow #NeverGiveUp #SuccessMindset #Empowerment`,
-    facebook:  `"${video.title}"\n\nToday's Daily Message is here — and it's one you need to hear. 🔥\n\n👇 Tag a teen who needs this today.\n\nFollow ProTeen Nation for daily motivation built for the next generation.\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation`,
+    instagram: `"${video.title}"\n\nToday's Daily Message — ProTeen Nation 🔥\n\n💾 Save this for the days you need it most.\n\n${getHashtagSet('instagram', dailyIdx, video.topic)}`,
+    facebook:  `"${video.title}"\n\nToday's Daily Message is here — and it's one you need to hear. 🔥\n\n👇 Tag a teen who needs this today.\n\nFollow ProTeen Nation for daily motivation built for the next generation.\n\n${getHashtagSet('facebook', dailyIdx, video.topic)}`,
+    youtube:   `"${video.title}"\n\nToday's Daily Message — watch it, share it, come back to it. 🔥\n\n🔔 Subscribe for new motivation every single day!\n\n${getHashtagSet('youtube', dailyIdx, video.topic)}`,
   };
 
   console.log('[Buffer] Scheduling daily video', dueAt ? `at ${dueAt.toISOString()}` : '(add to queue)');
@@ -219,12 +221,117 @@ async function postDailyVideo(video) {
   return results;
 }
 
+// ── Hashtag banks — rotated per post so no two posts look identical ────────
+const HASHTAGS = {
+
+  // TikTok — 25 tags, algorithm-optimized. First 5 carry the most weight.
+  tiktok: [
+    ['#ProTeenNation','#WeAreTheFuture','#fyp','#foryoupage','#viral',
+     '#teen','#motivation','#teenlife','#inspire','#motivational',
+     '#youthempowerment','#teenmotivation','#nextgeneration','#genz',
+     '#dailymotivation','#successmindset','#growthmindset','#youngambitious',
+     '#dreambig','#hardwork','#nevergiveup','#levelup','#mindset',
+     '#positivevibes','#motivationaldaily'],
+    ['#ProTeenNation','#WeAreTheFuture','#fyp','#foryoupage','#viral',
+     '#teentok','#motivationdaily','#teeninspiration','#youngmindset',
+     '#successhabits','#schoolmotivation','#youthleadership','#genzlife',
+     '#selfimprovement','#teenmentalhealth','#buildingcharacter','#goaldigger',
+     '#mindsetshift','#motivationalvideo','#inspirationalquotes','#staystrong',
+     '#positivemindset','#teensuccess','#workhardplayhard','#bethechange'],
+    ['#ProTeenNation','#WeAreTheFuture','#fyp','#foryoupage','#trending',
+     '#motivate','#inspire','#youth','#teen','#genz',
+     '#dailyinspiration','#motivationalquote','#successquotes','#selfgrowth',
+     '#teenempowerment','#youngentrepreneur','#hustlehard','#neversettle',
+     '#keepgoing','#focusonyourself','#believeinyourself','#makeithappen',
+     '#potentialunlocked','#buildyourself','#teenmindset'],
+  ],
+
+  // Instagram — 28–30 tags, mix of mega/large/medium/niche for maximum discovery
+  instagram: [
+    ['#ProTeenNation','#WeAreTheFuture','#TeenMotivation','#Motivation',
+     '#Teens','#YoungAndAmbitious','#TeenLife','#MotivationalSpeech',
+     '#GrowthMindset','#BelieveInYourself','#YoungMinds','#TeenSuccess',
+     '#DailyMotivation','#InspireYouth','#InspirationalVideo','#YoungLeaders',
+     '#FutureIsNow','#ThinkBig','#KeepGoing','#NeverGiveUp','#SuccessMindset',
+     '#Empowerment','#GenZ','#YouthEmpowerment','#Inspire','#SelfImprovement',
+     '#PositiveMindset','#DailyInspiration'],
+    ['#ProTeenNation','#WeAreTheFuture','#TeenInspiration','#MotivationDaily',
+     '#YoungLeader','#TeenCoach','#SchoolMotivation','#NextGeneration',
+     '#YoungMindset','#SuccessHabits','#CharacterBuilding','#TeenMentalHealth',
+     '#YouthLeadership','#BuildYourself','#FocusOnYourself','#Resilience',
+     '#SelfBelief','#WorkEthic','#DreamBig','#MakeItHappen','#MindsetShift',
+     '#GoalDigger','#TeenEntrepreneur','#HardWork','#Discipline',
+     '#BetterEveryDay','#Potential','#GenZLife'],
+    ['#ProTeenNation','#WeAreTheFuture','#Motivation','#Teens','#GenZ',
+     '#YouthEmpowerment','#InspirationalQuotes','#SuccessQuotes','#SelfGrowth',
+     '#PositiveVibes','#DailyMotivation','#MindsetMatters','#NeverSettle',
+     '#BeTheChange','#StayStrong','#Hustle','#TeenPower','#YoungAndHungry',
+     '#FutureleadersOfAmerica','#AmericanYouth','#HighSchool','#College',
+     '#StudentMotivation','#AcademicSuccess','#Leadership','#Purpose',
+     '#YoungAndFocused','#KeepPushing'],
+  ],
+
+  // Facebook — 10–12 tags. FB reach is share-driven but tags still help discoverability.
+  facebook: [
+    ['#ProTeenNation','#WeAreTheFuture','#TeenMotivation','#YouthEmpowerment',
+     '#DailyMotivation','#Teens','#GrowthMindset','#YoungLeaders',
+     '#Inspire','#NextGeneration','#MotivationalVideo','#GenZ'],
+    ['#ProTeenNation','#WeAreTheFuture','#TeenInspiration','#Motivation',
+     '#SchoolLife','#YoungMinds','#BelieveInYourself','#CharacterBuilding',
+     '#SuccessMindset','#NeverGiveUp','#YoungAndAmbitious','#TeenLife'],
+    ['#ProTeenNation','#WeAreTheFuture','#DailyInspiration','#TeenSuccess',
+     '#YouthLeadership','#GrowthMindset','#Resilience','#Discipline',
+     '#FutureLeaders','#AmericanYouth','#HighSchool','#MotivationalSpeech'],
+  ],
+
+  // YouTube Shorts — 15 tags, mix of channel + content + topic discovery
+  youtube: [
+    ['#ProTeenNation','#WeAreTheFuture','#Shorts','#TeenMotivation',
+     '#MotivationalSpeech','#YoungAndAmbitious','#GrowthMindset',
+     '#DailyMotivation','#YouthEmpowerment','#Teens','#GenZ',
+     '#SuccessMindset','#Inspire','#BelieveInYourself','#NextGeneration'],
+    ['#ProTeenNation','#WeAreTheFuture','#Shorts','#TeenInspiration',
+     '#YoungLeaders','#SchoolMotivation','#MotivationDaily','#Teens',
+     '#CharacterBuilding','#NeverGiveUp','#Resilience','#Discipline',
+     '#FutureLeaders','#GenZLife','#HighSchoolLife'],
+    ['#ProTeenNation','#WeAreTheFuture','#Shorts','#DailyMotivation',
+     '#TeenSuccess','#YouthLeadership','#MindsetMatters','#Hustle',
+     '#KeepGoing','#DreamBig','#WorkEthic','#YoungEntrepreneur',
+     '#PotentialUnlocked','#AmericanYouth','#MotivationalVideo'],
+  ],
+
+  // Topic-specific bonus tags — appended to base set
+  topics: {
+    resilience:    ['#Resilience','#MentalToughness','#BounceBack','#Grit','#Perseverance'],
+    school:        ['#SchoolMotivation','#StudyTips','#AcademicSuccess','#HighSchool','#GradeUp'],
+    relationships: ['#TeenRelationships','#Friendship','#HealthyRelationships','#SocialSkills','#Community'],
+    faith:         ['#Faith','#Blessed','#Purpose','#Hope','#SpiritualGrowth'],
+    sports:        ['#AthleteMindset','#SportsMotivation','#YoungAthlete','#TrainHard','#WinningMindset'],
+    health:        ['#TeenHealth','#FitnessMotivation','#HealthyLifestyle','#MentalHealth','#Wellness'],
+    careers:       ['#YoungEntrepreneur','#CareerGoals','#FutureLeader','#Ambition','#Success'],
+    civics:        ['#YouthLeadership','#CivicEngagement','#BeTheChange','#Community','#FutureLeaders'],
+  },
+};
+
+// Pick a rotating hashtag set — cycles through 3 banks so posts never look identical
+function getHashtagSet(platform, clipIndex, topicId) {
+  const bank    = HASHTAGS[platform] || HASHTAGS.instagram;
+  const setIdx  = clipIndex % bank.length;
+  const base    = bank[setIdx];
+  const topicExtras = (HASHTAGS.topics[topicId] || []);
+  // Merge, dedupe, limit to platform max
+  const limits  = { tiktok: 25, instagram: 30, facebook: 12, youtube: 15, twitter: 4 };
+  const merged  = [...new Set([...base, ...topicExtras])].slice(0, limits[platform] || 25);
+  return merged.join(' ');
+}
+
 // ── Platform-specific caption builder ─────────────────────────────────────
 // Tailors caption, hashtags, and CTA for each platform's algorithm.
 // Key insight: saves, comments, and shares are the top reach signals.
 function buildPlatformCaption(baseCaption, platform, video, clipIndex = 0) {
-  const topicTag = (video.topicName || '').replace(/[\s&]+/g, '').replace(/[^a-zA-Z]/g, '');
-  const hook = baseCaption || `"${video.title}"`;
+  const topicId  = video.topic || '';
+  const hook     = baseCaption || `"${video.title}"`;
+  const tags     = getHashtagSet(platform, clipIndex, topicId);
 
   // Rotate CTAs so each clip feels fresh — saves + comments + shares cover all 3 algorithm signals
   const ctas = [
@@ -238,30 +345,26 @@ function buildPlatformCaption(baseCaption, platform, video, clipIndex = 0) {
   const cta = ctas[clipIndex % ctas.length];
 
   if (platform === 'tiktok') {
-    // TikTok: short + FYP-targeting hashtags (algorithm reads first 5 tags heavily)
-    return `${hook}\n\n${cta}\n\n#ProTeenNation #WeAreTheFuture #fyp #foryoupage #teen #motivation #viral #teenlife #inspire #motivational`;
+    return `${hook}\n\n${cta}\n\n${tags}`;
 
   } else if (platform === 'instagram') {
-    // Instagram: 20–25 hashtags mixing reach sizes — large (discovery), medium (niche), small (loyal)
-    return `${hook}\n\n${cta}\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag} #Teens #Motivation #YoungAndAmbitious #TeenLife #MotivationalSpeech #GrowthMindset #BelieveInYourself #YoungMinds #TeenSuccess #DailyMotivation #InspireYouth #InspirationalVideo #YoungLeaders #FutureIsNow #ThinkBig #KeepGoing #NeverGiveUp #SuccessMindset #Empowerment #GenZ`;
+    return `${hook}\n\n${cta}\n\n${tags}`;
 
   } else if (platform === 'facebook') {
-    // Facebook: conversational tone, minimal hashtags — reach comes from shares here
-    return `${hook}\n\n${cta}\n\nFollow ProTeen Nation for daily motivation built for the next generation. 🔥\n\n#ProTeenNation #TeenMotivation #WeAreTheFuture`;
+    return `${hook}\n\n${cta}\n\nFollow ProTeen Nation for daily motivation built for the next generation. 🔥\n\n${tags}`;
 
   } else if (platform === 'youtube') {
-    // YouTube Shorts: description + subscribe CTA + relevant hashtags
-    return `${hook}\n\n${cta}\n\n🔔 Subscribe to ProTeen Nation — new motivation every single day!\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag} #Shorts #MotivationalSpeech #YoungAndAmbitious`;
+    return `${hook}\n\n${cta}\n\n🔔 Subscribe to ProTeen Nation — new motivation every single day!\n\n${tags}`;
 
   } else if (platform === 'twitter') {
-    // X/Twitter: punchy, max 275 chars with hashtags
+    // X/Twitter: strictly character-limited — 3 tags max
+    const twitterTags = `#ProTeenNation #TeenMotivation #WeAreTheFuture`;
     const base = `${hook}\n\n${cta}`;
-    const tags  = `\n\n#ProTeenNation #TeenMotivation #${topicTag}`;
-    const full  = base + tags;
-    return full.length > 275 ? full.slice(0, 272) + '...' : full;
+    const full = `${base}\n\n${twitterTags}`;
+    return full.length > 275 ? base.slice(0, 275 - twitterTags.length - 4) + '...\n\n' + twitterTags : full;
   }
 
-  return hook;
+  return `${hook}\n\n${tags}`;
 }
 
 // Schedule 6 clips at peak teen engagement times (Central time, research-backed)
