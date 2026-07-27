@@ -139,7 +139,7 @@ async function runMiningCycle() {
           score: evaluation.score,
           reason: evaluation.reason,
           source: new URL(result.url).hostname.replace('www.', ''),
-          status: (process.env.POSTING_MODE !== 'review' && evaluation.score >= (parseInt(process.env.AUTO_POST_THRESHOLD) || 85))
+          status: (process.env.POSTING_MODE !== 'review' && evaluation.score >= (parseInt(process.env.AUTO_POST_THRESHOLD) || 80))
             ? 'approved'
             : 'pending',
           minedAt: new Date().toISOString(),
