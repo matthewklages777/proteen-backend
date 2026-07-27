@@ -642,7 +642,7 @@ app.listen(PORT, () => {
   console.log('║  Server:    http://localhost:' + PORT + '               ║');
   console.log('║  Admin:     http://localhost:' + PORT + '/admin          ║');
   console.log('║  API:       http://localhost:' + PORT + '/api/articles   ║');
-  console.log('║  Mode:      ' + (process.env.POSTING_MODE || 'review') + '                                ║');
+  console.log('║  Mode:      ' + (process.env.POSTING_MODE || 'auto') + '                                ║');
   console.log('║  Mine every:' + MINE_HOURS + ' hours                               ║');
   console.log('╚══════════════════════════════════════════════════╝');
   startScheduler();

@@ -139,8 +139,7 @@ async function runMiningCycle() {
           score: evaluation.score,
           reason: evaluation.reason,
           source: new URL(result.url).hostname.replace('www.', ''),
-          // Auto-post if mode is 'auto' and score is high enough
-          status: (process.env.POSTING_MODE === 'auto' && evaluation.score >= (parseInt(process.env.AUTO_POST_THRESHOLD) || 85))
+          status: (process.env.POSTING_MODE !== 'review' && evaluation.score >= (parseInt(process.env.AUTO_POST_THRESHOLD) || 85))
             ? 'approved'
             : 'pending',
           minedAt: new Date().toISOString(),
@@ -163,7 +162,7 @@ async function runMiningCycle() {
 
   // Send review email if in review mode and we have pending articles
   const pending = newArticles.filter(a => a.status === 'pending');
-  if (process.env.POSTING_MODE !== 'auto' && pending.length > 0) {
+  if (process.env.POSTING_MODE === 'review' && pending.length > 0) {
     await sendReviewEmail(pending);
   }
 
