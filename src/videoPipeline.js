@@ -23,11 +23,27 @@ async function generateSpeech(topic) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   console.log('[Pipeline] Anthropic key present:', !!apiKey, '| starts with:', apiKey ? apiKey.slice(0, 10) : 'MISSING');
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY environment variable is not set on Railway. Go to Railway > Variables and add it.');
+
+  // Pull recent titles for this topic so Claude avoids repeating them
+  const recentForTopic = videoDB.getArchive(60)
+    .filter(v => v.topic === topic.id)
+    .slice(0, 4)
+    .map(v => `"${v.title}" (${v.date})`);
+  const avoidBlock = recentForTopic.length
+    ? `\n\nDo NOT repeat these recent ${topic.name} speeches — choose a completely different angle, story, or opening hook:\n${recentForTopic.join('\n')}`
+    : '';
+
+  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+
   const anthropic = new Anthropic({ apiKey });
   const message = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 1000,
-    messages: [{ role: 'user', content: 'Write a powerful 2-3 minute motivational speech for teenagers about ' + topic.name + '. Open with a bold attention-grabbing line. Speak directly to the teen using "you". Be specific and honest. Build emotional momentum — start grounded, rise to passion, pull back to something quiet and real, then finish with fire. Include one concrete action they can take today. Use short punchy sentences for emphasis at peak moments. End with an unforgettable closing line. Return only the speech text, no titles or labels.' }],
+    messages: [{ role: 'user', content: `Today is ${today}. Write a powerful 2-3 minute motivational speech for teenagers about ${topic.name}.${avoidBlock}
+
+Open with a bold, attention-grabbing line that is UNIQUE to today — no recycled openers. Speak directly to the teen using "you". Be specific and honest. Build emotional momentum — start grounded, rise to passion, pull back to something quiet and real, then finish with fire. Include one concrete action they can take today. Use short punchy sentences for emphasis at peak moments. End with an unforgettable closing line that feels fresh and original.
+
+Return only the speech text, no titles or labels.` }],
   });
   const script = message.content[0].text.trim();
   console.log('[Pipeline] Speech generated', script.split(' ').length, 'words');

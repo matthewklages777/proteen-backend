@@ -80,12 +80,28 @@ Return ONLY valid JSON array of exactly 6 items:
   }
 }
 
-// ── Step 2: Generate platform caption ─────────────────────────────────────
-async function generateCaption(clip, platform, video) {
+// ── Step 2: Generate clip caption (distinct from main video caption) ────────
+async function generateCaption(clip, video) {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const platformNames = { instagram: 'Instagram Reels', youtube: 'YouTube Shorts', facebook: 'Facebook Reels', x: 'X (Twitter)' };
-  const hashtagCount = platform === 'x' ? 3 : 10;
-  const maxLen = platform === 'x' ? 200 : 150;
+
+  const clipAngles = {
+    hook:      'opening hook — make them stop scrolling immediately',
+    lesson:    'key lesson or insight — make it land hard',
+    quote:     'quotable moment — short, punchy, highly shareable',
+    challenge: 'challenge or call-to-action — fire them up to act',
+    emotional: 'emotional moment — make them feel something real',
+    closing:   'powerful closing — leave them inspired and ready',
+  };
+  const angle = clipAngles[clip.type] || 'powerful moment';
+
+  const fallbackTags = {
+    hook:      '#ProTeenNation #MindsetShift #YoungAndHungry #TeenLife #NextGeneration #RiseAndGrind #FutureLeaders #BelieveInYourself',
+    lesson:    '#ProTeenNation #GrowthMindset #LifeLessons #TeenLife #LevelUp #YouthLeadership #NextGeneration #BelieveInYourself',
+    quote:     '#ProTeenNation #QuoteOfTheDay #MindsetShift #TeenLife #FutureLeaders #Inspired #YoungAndHungry #NextGeneration',
+    challenge: '#ProTeenNation #RiseAndGrind #ChallengeAccepted #TeenLife #LevelUp #YoungAndHungry #FutureLeaders #MindsetShift',
+    emotional: '#ProTeenNation #BelieveInYourself #GrowthMindset #TeenLife #YouAreEnough #NextGeneration #Inspired #FutureLeaders',
+    closing:   '#ProTeenNation #LevelUp #YoungAndHungry #TeenLife #FutureLeaders #MindsetShift #NextGeneration #GrowthMindset',
+  };
 
   try {
     const msg = await anthropic.messages.create({
@@ -93,16 +109,25 @@ async function generateCaption(clip, platform, video) {
       max_tokens: 300,
       messages: [{
         role: 'user',
-        content: `Write a ${platformNames[platform]} caption for this ProTeen Nation clip.
-Clip hook: "${clip.hookLine}"
+        content: `Write a short, punchy social media caption for a ProTeen Nation short clip.
+
+Clip type: ${angle}
+Hook line: "${clip.hookLine}"
 Topic: ${video.topicName}
-Keep it under ${maxLen} chars. Start strong. Add ${hashtagCount} hashtags at the end.
-Include #ProTeenNation #WeAreTheFuture. Return ONLY the caption text.`,
+
+Rules:
+- Under 140 characters before the hashtags
+- Match the energy of the clip type (a challenge clip reads differently than a quote clip)
+- End with 8 hashtags that are DIFFERENT from the main daily video
+- The main video already uses: #ProTeenNation #WeAreTheFuture #TeenMotivation #Teens #Motivation — do NOT use these
+- Use niche tags like: #MindsetShift #GrowthMindset #YoungAndHungry #TeenLife #RiseAndGrind #NextGeneration #YouthLeadership #BelieveInYourself #LevelUp #FutureLeaders
+- Always keep #ProTeenNation
+- Return ONLY the caption text, nothing else`,
       }],
     });
     return msg.content[0].text.trim();
   } catch {
-    return `${clip.hookLine}\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${video.topicName.replace(/\s/g,'')}`;
+    return `${clip.hookLine}\n\n${fallbackTags[clip.type] || fallbackTags.hook}`;
   }
 }
 
@@ -193,7 +218,7 @@ async function runClipPipeline(video) {
       console.log(`[ClipPipeline] Using full video URL for clip ${i + 1} (FFmpeg unavailable)`);
     }
 
-    const caption = await generateCaption(clip, 'general', video);
+    const caption = await generateCaption(clip, video);
     readyClips.push({ clip, clipUrl, caption, index: i + 1 });
   }
 
