@@ -6,7 +6,7 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { videoDB } = require('./videoDatabase');
 const { renderVideo } = require('./videoRenderer');
-const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'V2bPluzT7MuirpucVAKH';
+const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'onwK4e9ZLuTAKqWW03F9'; // Daniel — warm, smooth, uplifting
 const AUDIO_DIR = path.join(__dirname, '../data/audio');
 const BACKEND_URL = process.env.BACKEND_URL || 'https://proteen-backend-production.up.railway.app';
 const TOPIC_ROTATION = [
@@ -60,7 +60,7 @@ async function generateAudio(script, videoId) {
       console.log('[Pipeline] Generating audio with ElevenLabs Frank...');
       const response = await axios.post(
         'https://api.elevenlabs.io/v1/text-to-speech/' + ELEVENLABS_VOICE_ID,
-        { text: script, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.30, similarity_boost: 0.85, style: 0.72, use_speaker_boost: true } },
+        { text: script, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.55, similarity_boost: 0.80, style: 0.30, use_speaker_boost: true } },
         { headers: { 'xi-api-key': elevenKey, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' }, responseType: 'arraybuffer', timeout: 60000 }
       );
       fs.writeFileSync(audioPath, response.data);
@@ -137,7 +137,7 @@ async function runDailyVideoPipeline(topicOverride) {
   const title = rawTitle.length <= 60 ? rawTitle : rawTitle.slice(0, 60).replace(/\s+\S*$/, '').trim();
   const videoPath = await renderVideo(audioPath, { id: videoId, title, topic: topic.id, topicName: topic.name });
   const videoUrl = `${BACKEND_URL}/videos/${videoId}.mp4`;
-  const videoRecord = { id: videoId, date: new Date().toISOString().split('T')[0], topic: topic.id, topicName: topic.name, title, script, audioPath, videoPath, videoUrl, status: 'ready', durationSecs: Math.ceil(script.split(' ').length / 2.5), generatedAt: new Date().toISOString(), voiceName: 'Frank', voiceId: ELEVENLABS_VOICE_ID };
+  const videoRecord = { id: videoId, date: new Date().toISOString().split('T')[0], topic: topic.id, topicName: topic.name, title, script, audioPath, videoPath, videoUrl, status: 'ready', durationSecs: Math.ceil(script.split(' ').length / 2.5), generatedAt: new Date().toISOString(), voiceName: 'Daniel', voiceId: ELEVENLABS_VOICE_ID };
   videoDB.saveVideo(videoRecord);
   console.log('[Pipeline] Video pipeline complete:', videoRecord.title);
   return videoRecord;
