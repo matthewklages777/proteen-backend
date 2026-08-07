@@ -9,16 +9,17 @@ const BUFFER_API = 'https://api.buffer.com/graphql';
 const ORG_ID     = '6a0b4a9276619973c3a551a3';
 
 // Channel IDs from Buffer account (matthewklages@me.com)
+// TikTok excluded — Buffer cannot auto-publish video to TikTok (API restriction).
+// TikTok clip URLs are logged after each run for manual posting.
 const CHANNELS = {
   instagram: '6a0b4e78090476fb99332860',
   facebook:  '6a0b4f23090476fb99332b0f',
   twitter:   '6a0b5011090476fb99332ec0',
   youtube:   '6a0b5135090476fb993332bc',
-  tiktok:    '6a0b5260090476fb9933368f',
 };
 
-// X/Twitter & TikTok have short video limits — only receive clips, not full video
-const CLIP_ONLY_CHANNELS = ['twitter', 'tiktok'];
+// X/Twitter has a short video limit — only receives clips, not the full daily video
+const CLIP_ONLY_CHANNELS = ['twitter'];
 
 const MUTATION = `
   mutation CreatePost($input: CreatePostInput!) {
@@ -143,6 +144,8 @@ async function postClips(video, clips) {
   }
 
   console.log(`[Buffer] All ${results.length} clips scheduled ✅`);
+  console.log('[TikTok] Manual posting required — clip URLs:');
+  clips.forEach((c, i) => console.log(`  Clip ${i + 1}: ${c.clipUrl}`));
   return results;
 }
 
