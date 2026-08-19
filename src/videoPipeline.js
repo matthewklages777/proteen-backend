@@ -6,7 +6,7 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { videoDB } = require('./videoDatabase');
 const { renderVideo } = require('./videoRenderer');
-const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'V2bPluzT7MuirpucVAKH';
+const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'onwK4e9ZLuTAKqWW03F9'; // Daniel — warm, smooth, uplifting
 const AUDIO_DIR = path.join(__dirname, '../data/audio');
 const BACKEND_URL = process.env.BACKEND_URL || 'https://proteen-backend-production.up.railway.app';
 const TOPIC_ROTATION = [
@@ -23,11 +23,23 @@ async function generateSpeech(topic) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   console.log('[Pipeline] Anthropic key present:', !!apiKey, '| starts with:', apiKey ? apiKey.slice(0, 10) : 'MISSING');
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY environment variable is not set on Railway. Go to Railway > Variables and add it.');
+
+  // Pull recent titles for this topic so Claude avoids repeating them
+  const recentForTopic = videoDB.getArchive(60)
+    .filter(v => v.topic === topic.id)
+    .slice(0, 4)
+    .map(v => `"${v.title}" (${v.date})`);
+  const avoidBlock = recentForTopic.length
+    ? `\n\nDo NOT repeat these recent ${topic.name} speeches — choose a completely different angle, story, or opening hook:\n${recentForTopic.join('\n')}`
+    : '';
+
+  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+
   const anthropic = new Anthropic({ apiKey });
   const message = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 1000,
-    messages: [{ role: 'user', content: 'Write a powerful 2-3 minute motivational speech for teenagers about ' + topic.name + '. Open with a bold attention-grabbing line. Speak directly to the teen using "you". Be specific and honest. Build emotional momentum — start grounded, rise to passion, pull back to something quiet and real, then finish with fire. Include one concrete action they can take today. Use short punchy sentences for emphasis at peak moments. End with an unforgettable closing line. Return only the speech text, no titles or labels.' }],
+    messages: [{ role: 'user', content: `Today is ${today}. Write a powerful 2-3 minute motivational speech for teenagers about ${topic.name}.${avoidBlock}\n\nOpen with a bold, attention-grabbing line that is UNIQUE to today — no recycled openers. Speak directly to the teen using "you". Be specific and honest. Build emotional momentum — start grounded, rise to passion, pull back to something quiet and real, then finish with fire. Include one concrete action they can take today. Use short punchy sentences for emphasis at peak moments. End with an unforgettable closing line that feels fresh and original.\n\nReturn only the speech text, no titles or labels.` }],
   });
   const script = message.content[0].text.trim();
   console.log('[Pipeline] Speech generated', script.split(' ').length, 'words');
@@ -41,10 +53,10 @@ async function generateAudio(script, videoId) {
   const elevenKey = (process.env.ELEVENLABS_API_KEY || '').trim();
   if (elevenKey) {
     try {
-      console.log('[Pipeline] Generating audio with ElevenLabs Frank...');
+      console.log('[Pipeline] Generating audio with ElevenLabs Daniel...');
       const response = await axios.post(
         'https://api.elevenlabs.io/v1/text-to-speech/' + ELEVENLABS_VOICE_ID,
-        { text: script, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.30, similarity_boost: 0.85, style: 0.72, use_speaker_boost: true } },
+        { text: script, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.55, similarity_boost: 0.80, style: 0.30, use_speaker_boost: true } },
         { headers: { 'xi-api-key': elevenKey, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' }, responseType: 'arraybuffer', timeout: 60000 }
       );
       fs.writeFileSync(audioPath, response.data);
@@ -64,13 +76,11 @@ async function generateAudio(script, videoId) {
   const openai = new OpenAI({ apiKey: openaiKey });
   console.log('[Pipeline] Generating audio with OpenAI TTS (onyx voice)...');
 
-  // OpenAI TTS has a 4096-character limit — chunk long scripts and concatenate
   const MAX_CHARS = 4000;
   const chunks = [];
   if (script.length <= MAX_CHARS) {
     chunks.push(script);
   } else {
-    // Split on sentence boundaries to avoid cutting mid-sentence
     const sentences = script.match(/[^.!?]+[.!?]+/g) || [script];
     let current = '';
     for (const sentence of sentences) {
@@ -98,7 +108,6 @@ async function generateAudio(script, videoId) {
     buffers.push(Buffer.from(await mp3.arrayBuffer()));
   }
 
-  // Concatenate all MP3 buffers (MP3 frames are self-contained — simple concat works)
   const finalBuffer = Buffer.concat(buffers);
   fs.writeFileSync(audioPath, finalBuffer);
   console.log('[Pipeline] Audio saved via OpenAI TTS:', audioPath);
@@ -121,7 +130,7 @@ async function runDailyVideoPipeline(topicOverride) {
   const title = rawTitle.length <= 60 ? rawTitle : rawTitle.slice(0, 60).replace(/\s+\S*$/, '').trim();
   const videoPath = await renderVideo(audioPath, { id: videoId, title, topic: topic.id, topicName: topic.name });
   const videoUrl = `${BACKEND_URL}/videos/${videoId}.mp4`;
-  const videoRecord = { id: videoId, date: new Date().toISOString().split('T')[0], topic: topic.id, topicName: topic.name, title, script, audioPath, videoPath, videoUrl, status: 'ready', durationSecs: Math.ceil(script.split(' ').length / 2.5), generatedAt: new Date().toISOString(), voiceName: 'Frank', voiceId: ELEVENLABS_VOICE_ID };
+  const videoRecord = { id: videoId, date: new Date().toISOString().split('T')[0], topic: topic.id, topicName: topic.name, title, script, audioPath, videoPath, videoUrl, status: 'ready', durationSecs: Math.ceil(script.split(' ').length / 2.5), generatedAt: new Date().toISOString(), voiceName: 'Daniel', voiceId: ELEVENLABS_VOICE_ID };
   videoDB.saveVideo(videoRecord);
   console.log('[Pipeline] Video pipeline complete:', videoRecord.title);
   return videoRecord;
@@ -132,7 +141,8 @@ async function testPipeline() {
     const script = await generateSpeech(TOPIC_ROTATION[0]);
     console.log('[Pipeline] Claude speech generation working');
     console.log('[Pipeline] First line:', script.split('\n')[0]);
-    if (!ELEVENLABS_API_KEY || ELEVENLABS_API_KEY === 'YOUR_KEY_HERE') {
+    const elevenKey = (process.env.ELEVENLABS_API_KEY || '').trim();
+    if (!elevenKey) {
       console.log('[Pipeline] ElevenLabs key not set');
     } else {
       const testId = 'test-' + Date.now();

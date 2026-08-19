@@ -1,6 +1,7 @@
 // ProTeen Nation — Buffer Poster
 // Posts daily videos and clips to all social media via Buffer GraphQL API
-// Channels: Instagram, Facebook, X (Twitter), YouTube, TikTok
+// Channels: Instagram, Facebook, X (Twitter), YouTube
+// TikTok: excluded — Buffer cannot auto-publish video to TikTok (API restriction)
 
 require('dotenv').config();
 const axios = require('axios');
@@ -9,16 +10,17 @@ const BUFFER_API = 'https://api.buffer.com/graphql';
 const ORG_ID     = '6a0b4a9276619973c3a551a3';
 
 // Channel IDs from Buffer account (matthewklages@me.com)
+// TikTok excluded — Buffer cannot auto-publish video to TikTok (API restriction).
+// TikTok clip URLs are logged after each run for manual posting.
 const CHANNELS = {
   instagram: '6a0b4e78090476fb99332860',
   facebook:  '6a0b4f23090476fb99332b0f',
   twitter:   '6a0b5011090476fb99332ec0',
   youtube:   '6a0b5135090476fb993332bc',
-  tiktok:    '6a0b5260090476fb9933368f',
 };
 
-// X/Twitter & TikTok have short video limits — only receive clips, not full video
-const CLIP_ONLY_CHANNELS = ['twitter', 'tiktok'];
+// X/Twitter has a short video limit — only receives clips, not the full daily video
+const CLIP_ONLY_CHANNELS = ['twitter'];
 
 const MUTATION = `
   mutation CreatePost($input: CreatePostInput!) {
@@ -42,9 +44,8 @@ async function bufferQuery(variables) {
 }
 
 // Schedule a single post to one Buffer channel
-// If dueAt is in the past (or not provided), falls back to adding to Buffer queue
 async function schedulePost({ channelId, text, mediaUrl, dueAt }) {
-  const inFuture = dueAt && new Date(dueAt).getTime() > Date.now() + 60000; // must be >1 min future
+  const inFuture = dueAt && new Date(dueAt).getTime() > Date.now() + 60000;
   const input = {
     channelId,
     text,
@@ -70,15 +71,12 @@ async function schedulePost({ channelId, text, mediaUrl, dueAt }) {
 }
 
 // Post today's daily video to long-form channels at 6 AM CST (11:00 UTC)
-// If that slot has already passed, adds to Buffer queue instead
 async function postDailyVideo(video) {
   if (!video?.videoUrl) { console.warn('[Buffer] No videoUrl'); return {}; }
 
   const now = new Date();
-  // Target 11:00 UTC (6 AM CST); if past, use tomorrow
   let dueAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 11, 0, 0));
   if (dueAt.getTime() <= Date.now() + 60000) {
-    // Already passed today — add to queue (Buffer picks next available slot)
     dueAt = null;
     console.log('[Buffer] 11:00 UTC slot passed — adding daily video to queue');
   }
@@ -101,14 +99,7 @@ async function postDailyVideo(video) {
 }
 
 // Schedule 6 clips at peak engagement times for teen audience (CDT)
-// 7:00 AM  — morning phone check before school
-// 11:30 AM — lunch break scroll
-// 3:30 PM  — just out of school, high energy
-// 5:30 PM  — after-school wind-down
-// 8:00 PM  — prime evening scroll (highest teen engagement)
-// 10:00 PM — before bed (teens stay up late)
 // UTC (CDT = UTC-5): 12:00, 16:30, 20:30, 22:30, 01:00, 03:00
-// If a time slot has already passed today, uses the next day's slot OR adds to queue
 async function postClips(video, clips) {
   if (!clips?.length) { console.warn('[Buffer] No clips'); return []; }
 
@@ -119,10 +110,9 @@ async function postClips(video, clips) {
   for (let i = 0; i < Math.min(clips.length, 6); i++) {
     const clip   = clips[i];
     const [h, m] = POST_TIMES_UTC[i].split(':').map(Number);
-    const dayOff = h < 6 ? 1 : 0; // 01:00 and 03:00 UTC are next calendar day
+    const dayOff = h < 6 ? 1 : 0;
 
     let slotTime = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOff, h, m, 0));
-    // If slot is already in the past, push it to the next day
     if (slotTime.getTime() <= Date.now() + 60000) {
       slotTime = new Date(slotTime.getTime() + 24 * 60 * 60 * 1000);
       console.log(`[Buffer] Slot ${POST_TIMES_UTC[i]} UTC passed — rescheduled to tomorrow`);
@@ -130,11 +120,13 @@ async function postClips(video, clips) {
     const dueAt = slotTime.toISOString();
 
     const topicTag = (video.topicName || '').replace(/[\s&]+/g, '').replace(/[^a-zA-Z]/g, '');
-    const caption  = clip.caption || `"${video.title}" 🔥\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag}`;
+    const baseCaption = clip.caption || `"${video.title}" 🔥\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag}`;
 
     console.log(`[Buffer] Scheduling clip ${i + 1}/6 at ${slotTime.toISOString()} to all channels`);
     const clipResults = {};
     for (const [platform, channelId] of Object.entries(CHANNELS)) {
+      // Add #Shorts to YouTube captions so clips register as YouTube Shorts
+      const caption = platform === 'youtube' ? `${baseCaption}\n#Shorts` : baseCaption;
       clipResults[platform] = await schedulePost({ channelId, text: caption, mediaUrl: clip.clipUrl, dueAt });
       await delay(600);
     }
@@ -143,6 +135,8 @@ async function postClips(video, clips) {
   }
 
   console.log(`[Buffer] All ${results.length} clips scheduled ✅`);
+  console.log('[TikTok] Manual posting required — clip URLs:');
+  clips.forEach((c, i) => console.log(`  Clip ${i + 1}: ${c.clipUrl}`));
   return results;
 }
 

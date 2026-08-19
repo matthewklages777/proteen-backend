@@ -2,8 +2,8 @@
 // After the daily video is generated:
 //   1. Claude identifies the 6 best 30-second moments
 //   2. FFmpeg cuts each clip from the full MP4
-//   3. Each clip is posted to Instagram, YouTube, Facebook, and X via webhooks
-//   (TikTok is manual — user downloads and posts)
+//   3. Each clip is posted to Instagram, YouTube, Facebook, and X via Buffer
+//   (TikTok is manual — Buffer cannot auto-publish video to TikTok)
 
 require('dotenv').config();
 const Anthropic = require('@anthropic-ai/sdk');
@@ -68,7 +68,6 @@ Return ONLY valid JSON array of exactly 6 items:
     return clips.slice(0, 6);
   } catch (err) {
     console.error('[ClipPipeline] Failed to identify clips:', err.message);
-    // Fallback: evenly space 6 clips through the video
     const step = Math.floor(video.durationSecs / 7);
     return Array.from({ length: 6 }, (_, i) => ({
       type: ['hook','lesson','quote','challenge','emotional','closing'][i],
@@ -80,12 +79,28 @@ Return ONLY valid JSON array of exactly 6 items:
   }
 }
 
-// ── Step 2: Generate platform caption ─────────────────────────────────────
-async function generateCaption(clip, platform, video) {
+// ── Step 2: Generate clip caption (distinct from main video caption) ────────
+async function generateCaption(clip, video) {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const platformNames = { instagram: 'Instagram Reels', youtube: 'YouTube Shorts', facebook: 'Facebook Reels', x: 'X (Twitter)' };
-  const hashtagCount = platform === 'x' ? 3 : 10;
-  const maxLen = platform === 'x' ? 200 : 150;
+
+  const clipAngles = {
+    hook:      'opening hook — make them stop scrolling immediately',
+    lesson:    'key lesson or insight — make it land hard',
+    quote:     'quotable moment — short, punchy, highly shareable',
+    challenge: 'challenge or call-to-action — fire them up to act',
+    emotional: 'emotional moment — make them feel something real',
+    closing:   'powerful closing — leave them inspired and ready',
+  };
+  const angle = clipAngles[clip.type] || 'powerful moment';
+
+  const fallbackTags = {
+    hook:      '#ProTeenNation #MindsetShift #YoungAndHungry #TeenLife #NextGeneration #RiseAndGrind #FutureLeaders #BelieveInYourself',
+    lesson:    '#ProTeenNation #GrowthMindset #LifeLessons #TeenLife #LevelUp #YouthLeadership #NextGeneration #BelieveInYourself',
+    quote:     '#ProTeenNation #QuoteOfTheDay #MindsetShift #TeenLife #FutureLeaders #Inspired #YoungAndHungry #NextGeneration',
+    challenge: '#ProTeenNation #RiseAndGrind #ChallengeAccepted #TeenLife #LevelUp #YoungAndHungry #FutureLeaders #MindsetShift',
+    emotional: '#ProTeenNation #BelieveInYourself #GrowthMindset #TeenLife #YouAreEnough #NextGeneration #Inspired #FutureLeaders',
+    closing:   '#ProTeenNation #LevelUp #YoungAndHungry #TeenLife #FutureLeaders #MindsetShift #NextGeneration #GrowthMindset',
+  };
 
   try {
     const msg = await anthropic.messages.create({
@@ -93,16 +108,12 @@ async function generateCaption(clip, platform, video) {
       max_tokens: 300,
       messages: [{
         role: 'user',
-        content: `Write a ${platformNames[platform]} caption for this ProTeen Nation clip.
-Clip hook: "${clip.hookLine}"
-Topic: ${video.topicName}
-Keep it under ${maxLen} chars. Start strong. Add ${hashtagCount} hashtags at the end.
-Include #ProTeenNation #WeAreTheFuture. Return ONLY the caption text.`,
+        content: `Write a short, punchy social media caption for a ProTeen Nation short clip.\n\nClip type: ${angle}\nHook line: "${clip.hookLine}"\nTopic: ${video.topicName}\n\nRules:\n- Under 140 characters before the hashtags\n- Match the energy of the clip type (a challenge clip reads differently than a quote clip)\n- End with 8 hashtags that are DIFFERENT from the main daily video\n- The main video already uses: #ProTeenNation #WeAreTheFuture #TeenMotivation #Teens #Motivation — do NOT use these\n- Use niche tags like: #MindsetShift #GrowthMindset #YoungAndHungry #TeenLife #RiseAndGrind #NextGeneration #YouthLeadership #BelieveInYourself #LevelUp #FutureLeaders\n- Always keep #ProTeenNation\n- Return ONLY the caption text, nothing else`,
       }],
     });
     return msg.content[0].text.trim();
   } catch {
-    return `${clip.hookLine}\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${video.topicName.replace(/\s/g,'')}`;
+    return `${clip.hookLine}\n\n${fallbackTags[clip.type] || fallbackTags.hook}`;
   }
 }
 
@@ -112,7 +123,6 @@ function msUntil(timeStr) {
   const now = new Date();
   const target = new Date();
   target.setHours(h, m, 0, 0);
-  // If time already passed today, schedule for tomorrow
   if (target <= now) target.setDate(target.getDate() + 1);
   return target.getTime() - now.getTime();
 }
@@ -157,14 +167,12 @@ async function runClipPipeline(video) {
 
   console.log('\n[ClipPipeline] Starting clip pipeline for:', video.title);
 
-  // Step 1: Identify 6 clip moments
   const clipMoments = await identifyClips(video);
   if (!clipMoments.length) {
     console.error('[ClipPipeline] No clip moments identified');
     return;
   }
 
-  // Step 2: Cut all 6 clips (fall back to full video URL if FFmpeg fails)
   const readyClips = [];
   let ffmpegWorking = true;
 
@@ -185,21 +193,19 @@ async function runClipPipeline(video) {
       } catch (err) {
         console.warn(`[ClipPipeline] FFmpeg failed on clip ${i + 1}, using full video URL:`, err.message);
         ffmpegWorking = false;
-        clipUrl = video.videoUrl; // fallback: post the full video
+        clipUrl = video.videoUrl;
       }
     } else {
-      // FFmpeg already failed — just reuse the full video URL for remaining clips
       clipUrl = video.videoUrl;
       console.log(`[ClipPipeline] Using full video URL for clip ${i + 1} (FFmpeg unavailable)`);
     }
 
-    const caption = await generateCaption(clip, 'general', video);
+    const caption = await generateCaption(clip, video);
     readyClips.push({ clip, clipUrl, caption, index: i + 1 });
   }
 
   console.log(`[ClipPipeline] ${readyClips.length} posts ready (ffmpegWorking=${ffmpegWorking}). Scheduling via Buffer...`);
 
-  // Step 3: Schedule all posts via Buffer (spreads posts throughout the day automatically)
   try {
     const { postClips } = require('./poster');
     const bufferClips = readyClips.map(c => ({ clipUrl: c.clipUrl, caption: c.caption }));
