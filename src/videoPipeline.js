@@ -6,7 +6,12 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { videoDB } = require('./videoDatabase');
 const { renderVideo } = require('./videoRenderer');
-const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'onwK4e9ZLuTAKqWW03F9'; // Daniel — warm, smooth, uplifting
+
+// Charlie — natural young adult male, conversational, highly expressive
+// Best ElevenLabs voice for teen motivational content
+const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'IKne3meq5aSn9XLyUdCD';
+const ELEVENLABS_VOICE_NAME = 'Charlie';
+
 const AUDIO_DIR = path.join(__dirname, '../data/audio');
 const BACKEND_URL = process.env.BACKEND_URL || 'https://proteen-backend-production.up.railway.app';
 const TOPIC_ROTATION = [
@@ -18,6 +23,7 @@ const TOPIC_ROTATION = [
   { id: 'health', name: 'Health & Fitness' },
   { id: 'careers', name: 'Careers & Ambition' },
 ];
+
 async function generateSpeech(topic) {
   console.log('[Pipeline] Generating speech for topic:', topic.name);
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -39,12 +45,19 @@ async function generateSpeech(topic) {
   const message = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 1000,
-    messages: [{ role: 'user', content: `Today is ${today}. Write a powerful 2-3 minute motivational speech for teenagers about ${topic.name}.${avoidBlock}\n\nOpen with a bold, attention-grabbing line that is UNIQUE to today — no recycled openers. Speak directly to the teen using "you". Be specific and honest. Build emotional momentum — start grounded, rise to passion, pull back to something quiet and real, then finish with fire. Include one concrete action they can take today. Use short punchy sentences for emphasis at peak moments. End with an unforgettable closing line that feels fresh and original.\n\nReturn only the speech text, no titles or labels.` }],
+    messages: [{ role: 'user', content: `Today is ${today}. Write a powerful 2-3 minute motivational speech for teenagers about ${topic.name}.${avoidBlock}
+
+This speech will be read aloud by a voice AI — write for the EAR, not the eye. Use natural spoken language: short sentences, contractions (you're, don't, it's, that's), conversational rhythm. Avoid formal or essay-like phrasing.
+
+Open with a bold, attention-grabbing spoken line that is UNIQUE to today — no recycled openers. Speak directly to the teen using "you". Be specific and honest. Build emotional momentum — start grounded, rise to passion, pull back to something quiet and real, then finish with fire. Include one concrete action they can take today. Use short punchy sentences for emphasis at peak moments. Vary sentence length naturally — mix quick punches with longer flowing thoughts. End with an unforgettable closing line that feels fresh and original.
+
+Return only the speech text, no titles or labels.` }],
   });
   const script = message.content[0].text.trim();
   console.log('[Pipeline] Speech generated', script.split(' ').length, 'words');
   return script;
 }
+
 async function generateAudio(script, videoId) {
   if (!fs.existsSync(AUDIO_DIR)) fs.mkdirSync(AUDIO_DIR, { recursive: true });
   const audioPath = path.join(AUDIO_DIR, videoId + '.mp3');
@@ -53,29 +66,41 @@ async function generateAudio(script, videoId) {
   const elevenKey = (process.env.ELEVENLABS_API_KEY || '').trim();
   if (elevenKey) {
     try {
-      console.log('[Pipeline] Generating audio with ElevenLabs Daniel...');
+      console.log(`[Pipeline] Generating audio with ElevenLabs ${ELEVENLABS_VOICE_NAME} (${ELEVENLABS_VOICE_ID})...`);
       const response = await axios.post(
         'https://api.elevenlabs.io/v1/text-to-speech/' + ELEVENLABS_VOICE_ID,
-        { text: script, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.55, similarity_boost: 0.80, style: 0.30, use_speaker_boost: true } },
+        {
+          text: script,
+          model_id: 'eleven_multilingual_v2',
+          voice_settings: {
+            stability: 0.35,          // lower = more emotional range, less flat/robotic
+            similarity_boost: 0.70,   // lower = more natural variation
+            style: 0.55,              // higher = expressive motivational delivery
+            use_speaker_boost: true,
+          },
+        },
         { headers: { 'xi-api-key': elevenKey, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' }, responseType: 'arraybuffer', timeout: 60000 }
       );
       fs.writeFileSync(audioPath, response.data);
-      console.log('[Pipeline] Audio saved via ElevenLabs:', audioPath);
+      console.log(`[Pipeline] Audio saved via ElevenLabs ${ELEVENLABS_VOICE_NAME}:`, audioPath);
       return audioPath;
     } catch (err) {
       const body = err.response?.data ? Buffer.from(err.response.data).toString('utf8') : '';
       console.warn('[Pipeline] ElevenLabs failed:', err.response?.status, body || err.message);
       console.log('[Pipeline] Falling back to OpenAI TTS...');
     }
+  } else {
+    console.warn('[Pipeline] ELEVENLABS_API_KEY not set — using OpenAI TTS fallback');
   }
 
   // Fallback: OpenAI TTS
   const openaiKey = (process.env.OPENAI_API_KEY || '').trim();
-  if (!openaiKey) throw new Error('ElevenLabs is out of credits and OPENAI_API_KEY is not set. Add it to Railway variables.');
+  if (!openaiKey) throw new Error('ElevenLabs is unavailable and OPENAI_API_KEY is not set. Add it to Railway variables.');
   const { OpenAI } = require('openai');
   const openai = new OpenAI({ apiKey: openaiKey });
-  console.log('[Pipeline] Generating audio with OpenAI TTS (onyx voice)...');
+  console.log('[Pipeline] Generating audio with OpenAI TTS (echo voice, tts-1-hd)...');
 
+  // OpenAI TTS has a 4096-character limit — chunk long scripts and concatenate
   const MAX_CHARS = 4000;
   const chunks = [];
   if (script.length <= MAX_CHARS) {
@@ -100,8 +125,8 @@ async function generateAudio(script, videoId) {
   for (let i = 0; i < chunks.length; i++) {
     console.log(`[Pipeline] Synthesizing chunk ${i + 1}/${chunks.length} (${chunks[i].length} chars)`);
     const mp3 = await openai.audio.speech.create({
-      model: 'tts-1',
-      voice: 'onyx',
+      model: 'tts-1-hd',  // HD model — noticeably less robotic than tts-1
+      voice: 'echo',      // warm, natural male voice (less robotic than onyx)
       input: chunks[i],
       speed: 1.0,
     });
@@ -110,9 +135,10 @@ async function generateAudio(script, videoId) {
 
   const finalBuffer = Buffer.concat(buffers);
   fs.writeFileSync(audioPath, finalBuffer);
-  console.log('[Pipeline] Audio saved via OpenAI TTS:', audioPath);
+  console.log('[Pipeline] Audio saved via OpenAI TTS (echo/hd):', audioPath);
   return audioPath;
 }
+
 async function runDailyVideoPipeline(topicOverride) {
   console.log('[Pipeline] Starting daily video pipeline at', new Date().toLocaleString());
   const dayIndex = new Date().getDay();
@@ -130,11 +156,12 @@ async function runDailyVideoPipeline(topicOverride) {
   const title = rawTitle.length <= 60 ? rawTitle : rawTitle.slice(0, 60).replace(/\s+\S*$/, '').trim();
   const videoPath = await renderVideo(audioPath, { id: videoId, title, topic: topic.id, topicName: topic.name });
   const videoUrl = `${BACKEND_URL}/videos/${videoId}.mp4`;
-  const videoRecord = { id: videoId, date: new Date().toISOString().split('T')[0], topic: topic.id, topicName: topic.name, title, script, audioPath, videoPath, videoUrl, status: 'ready', durationSecs: Math.ceil(script.split(' ').length / 2.5), generatedAt: new Date().toISOString(), voiceName: 'Daniel', voiceId: ELEVENLABS_VOICE_ID };
+  const videoRecord = { id: videoId, date: new Date().toISOString().split('T')[0], topic: topic.id, topicName: topic.name, title, script, audioPath, videoPath, videoUrl, status: 'ready', durationSecs: Math.ceil(script.split(' ').length / 2.5), generatedAt: new Date().toISOString(), voiceName: ELEVENLABS_VOICE_NAME, voiceId: ELEVENLABS_VOICE_ID };
   videoDB.saveVideo(videoRecord);
   console.log('[Pipeline] Video pipeline complete:', videoRecord.title);
   return videoRecord;
 }
+
 async function testPipeline() {
   console.log('[Pipeline] Running test...');
   try {
@@ -146,8 +173,8 @@ async function testPipeline() {
       console.log('[Pipeline] ElevenLabs key not set');
     } else {
       const testId = 'test-' + Date.now();
-      const audioPath = await generateAudio('ProTeen Nation. We are the future. This is a voice test.', testId);
-      console.log('[Pipeline] ElevenLabs audio generation working');
+      const audioPath = await generateAudio('ProTeen Nation. You are the future. This is a voice test.', testId);
+      console.log('[Pipeline] Audio generation working');
       if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
     }
     console.log('[Pipeline] All systems go! Ready for automated daily videos.');
@@ -155,6 +182,7 @@ async function testPipeline() {
     console.error('[Pipeline] Test failed:', err.message);
   }
 }
+
 module.exports = { runDailyVideoPipeline, testPipeline, generateSpeech, generateAudio };
 if (require.main === module) {
   const arg = process.argv[2];
