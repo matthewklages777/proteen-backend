@@ -1,3 +1,4 @@
+const { CLAUDE_SONNET, CLAUDE_HAIKU } = require('./aiModels');
 // ProTeen Nation — Buffer Poster
 // Posts daily videos and clips to all social media via Buffer GraphQL API
 // Channels: Instagram, Facebook, X (Twitter), YouTube, TikTok
@@ -331,7 +332,7 @@ async function generateVideoHashtags(video) {
 
   try {
     const msg = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: CLAUDE_SONNET,
       max_tokens: 200,
       messages: [{
         role: 'user',
@@ -381,7 +382,11 @@ function getHashtagSet(platform, clipIndex, topicId, videoTags = []) {
   const firstFive = base.slice(0, 5);
   const rest      = base.slice(5);
   const merged    = [...new Set([...firstFive, ...videoTags, ...rest, ...topicExtras])].slice(0, limit);
-  return merged.join(' ');
+
+  // Safety net: always guarantee at least 5 hashtags
+  const FALLBACK = ['#ProTeenNation','#WeAreTheFuture','#TeenMotivation','#DailyMotivation','#YoungAndAmbitious'];
+  const final = merged.length >= 5 ? merged : [...new Set([...merged, ...FALLBACK])].slice(0, limit);
+  return final.join(' ');
 }
 
 // ── Platform-specific caption builder ─────────────────────────────────────
@@ -416,8 +421,8 @@ function buildPlatformCaption(baseCaption, platform, video, clipIndex = 0, video
     return `${hook}\n\n${cta}\n\n🔔 Subscribe to ProTeen Nation — new motivation every single day!\n\n${tags}`;
 
   } else if (platform === 'twitter') {
-    // X/Twitter: strictly character-limited — 3 tags max
-    const twitterTags = `#ProTeenNation #TeenMotivation #WeAreTheFuture`;
+    // X/Twitter: character-limited — 5 tags minimum
+    const twitterTags = `#ProTeenNation #TeenMotivation #WeAreTheFuture #YoungAndAmbitious #DailyMotivation`;
     const base = `${hook}\n\n${cta}`;
     const full = `${base}\n\n${twitterTags}`;
     return full.length > 275 ? base.slice(0, 275 - twitterTags.length - 4) + '...\n\n' + twitterTags : full;

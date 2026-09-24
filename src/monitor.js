@@ -1,3 +1,4 @@
+const { CLAUDE_SONNET, CLAUDE_HAIKU } = require('./aiModels');
 // ProTeen Nation — Health Monitor
 // Watches every service ProTeen depends on and alerts the team
 // if anything stops working. Runs every 15 minutes.
@@ -40,7 +41,7 @@ async function checkAnthropic() {
   try {
     const msg = await Promise.race([
       anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
+        model: CLAUDE_HAIKU,
         max_tokens: 10,
         messages: [{ role: 'user', content: 'Reply with the word OK only.' }],
       }),

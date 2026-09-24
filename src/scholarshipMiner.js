@@ -1,3 +1,4 @@
+const { CLAUDE_SONNET, CLAUDE_HAIKU } = require('./aiModels');
 // ProTeen Nation — Scholarship & Grant Miner (No-API version)
 // Free sources: Google News RSS + DuckDuckGo HTML search + direct scholarship pages
 // No Tavily or other paid APIs needed.
@@ -162,7 +163,7 @@ Rules:
 
   try {
     const msg = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: CLAUDE_HAIKU,
       max_tokens: 2000,
       messages: [{ role: 'user', content: prompt }],
     });

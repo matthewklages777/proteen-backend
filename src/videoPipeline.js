@@ -1,3 +1,4 @@
+const { CLAUDE_SONNET, CLAUDE_HAIKU } = require('./aiModels');
 require('dotenv').config();
 const Anthropic = require('@anthropic-ai/sdk');
 const axios = require('axios');
@@ -6,7 +7,8 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { videoDB } = require('./videoDatabase');
 const { renderVideo } = require('./videoRenderer');
-const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'V2bPluzT7MuirpucVAKH';
+// Adam — deep, confident, natural American male. Best for motivational content.
+const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB';
 const AUDIO_DIR = path.join(__dirname, '../data/audio');
 const BACKEND_URL = process.env.BACKEND_URL || 'https://proteen-backend-production.up.railway.app';
 const TOPIC_ROTATION = [
@@ -18,19 +20,70 @@ const TOPIC_ROTATION = [
   { id: 'health', name: 'Health & Fitness' },
   { id: 'careers', name: 'Careers & Ambition' },
 ];
-async function generateSpeech(topic) {
+async function generateSpeech(topic, recentTitles = []) {
   console.log('[Pipeline] Generating speech for topic:', topic.name);
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  console.log('[Pipeline] Anthropic key present:', !!apiKey, '| starts with:', apiKey ? apiKey.slice(0, 10) : 'MISSING');
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY environment variable is not set on Railway. Go to Railway > Variables and add it.');
-  const anthropic = new Anthropic({ apiKey });
-  const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 1000,
-    messages: [{ role: 'user', content: 'Write a powerful 2-3 minute motivational speech for teenagers about ' + topic.name + '. Open with a bold attention-grabbing line. Speak directly to the teen using "you". Be specific and honest. Build emotional momentum — start grounded, rise to passion, pull back to something quiet and real, then finish with fire. Include one concrete action they can take today. Use short punchy sentences for emphasis at peak moments. End with an unforgettable closing line. Return only the speech text, no titles or labels.' }],
-  });
-  const script = message.content[0].text.trim();
-  console.log('[Pipeline] Speech generated', script.split(' ').length, 'words');
+
+  const avoidSection = recentTitles.length > 0
+    ? `\n\nIMPORTANT: These speeches have already been given recently — do NOT repeat these angles, themes, or opening lines:\n${recentTitles.map((t, i) => `${i + 1}. "${t}"`).join('\n')}\n\nChoose a completely fresh angle, specific story, or unexpected entry point into this topic.`
+    : '';
+
+  const prompt = `Write a motivational speech for American teenagers about ${topic.name}. STRICT LIMIT: 280-320 words maximum — this must be exactly 2 minutes when spoken aloud. Open with a bold, unexpected attention-grabbing line. Speak directly using "you". Build emotional momentum — grounded start, rise to passion, quiet truth, finish with fire. One concrete action they can take today. Short punchy sentences at peak moments. Unforgettable closing line. Return only the speech text, no titles or labels.${avoidSection}`;
+
+  let rawScript = null;
+
+  // Try Claude first
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  if (anthropicKey) {
+    try {
+      console.log('[Pipeline] Generating script with Claude...');
+      const anthropic = new Anthropic({ apiKey: anthropicKey });
+      const message = await anthropic.messages.create({
+        model: CLAUDE_SONNET,
+        max_tokens: 500,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      rawScript = message.content[0].text.trim();
+      console.log('[Pipeline] Script generated with Claude');
+    } catch (err) {
+      const msg = (err.message || '') + JSON.stringify(err.error || '');
+      const isCredits = msg.includes('credit balance') || msg.includes('insufficient_quota') || (err.status === 400 && msg.includes('billing'));
+      console.warn('[Pipeline] Claude script generation failed:', err.message);
+      if (!isCredits) throw err; // only fall through on credits/billing errors
+      console.log('[Pipeline] Claude credits exhausted — falling back to GPT-4o...');
+    }
+  }
+
+  // Fallback: OpenAI GPT-4o
+  if (!rawScript) {
+    const openaiKey = (process.env.OPENAI_API_KEY || '').trim();
+    if (!openaiKey) throw new Error('Claude credits exhausted and OPENAI_API_KEY is not set. Add it to Railway variables.');
+    const { OpenAI } = require('openai');
+    const openai = new OpenAI({ apiKey: openaiKey });
+    console.log('[Pipeline] Generating script with GPT-4o...');
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      max_tokens: 500,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    rawScript = completion.choices[0].message.content.trim();
+    console.log('[Pipeline] Script generated with GPT-4o (fallback)');
+  }
+
+  // Hard enforce word limit — truncate at sentence boundary if over 350 words
+  const words = rawScript.split(/\s+/);
+  let script = rawScript;
+  if (words.length > 350) {
+    const sentences = rawScript.match(/[^.!?]+[.!?]+/g) || [rawScript];
+    let trimmed = '';
+    for (const s of sentences) {
+      if ((trimmed + s).split(/\s+/).length > 340) break;
+      trimmed += s;
+    }
+    script = trimmed.trim() || rawScript.slice(0, 1800);
+    console.log(`[Pipeline] Script trimmed from ${words.length} to ${script.split(/\s+/).length} words`);
+  }
+
+  console.log('[Pipeline] Speech generated', script.split(/\s+/).length, 'words');
   return script;
 }
 async function generateAudio(script, videoId) {
@@ -44,7 +97,7 @@ async function generateAudio(script, videoId) {
       console.log('[Pipeline] Generating audio with ElevenLabs Frank...');
       const response = await axios.post(
         'https://api.elevenlabs.io/v1/text-to-speech/' + ELEVENLABS_VOICE_ID,
-        { text: script, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.30, similarity_boost: 0.85, style: 0.72, use_speaker_boost: true } },
+        { text: script, model_id: 'eleven_turbo_v2_5', voice_settings: { stability: 0.55, similarity_boost: 0.80, style: 0.45, use_speaker_boost: true } },
         { headers: { 'xi-api-key': elevenKey, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' }, responseType: 'arraybuffer', timeout: 60000 }
       );
       fs.writeFileSync(audioPath, response.data);
@@ -106,16 +159,38 @@ async function generateAudio(script, videoId) {
 }
 async function runDailyVideoPipeline(topicOverride) {
   console.log('[Pipeline] Starting daily video pipeline at', new Date().toLocaleString());
-  const dayIndex = new Date().getDay();
-  const topic = topicOverride
-    ? (TOPIC_ROTATION.find(t => t.id === topicOverride) || TOPIC_ROTATION[dayIndex % TOPIC_ROTATION.length])
-    : TOPIC_ROTATION[dayIndex % TOPIC_ROTATION.length];
+
+  // Use day-of-year (0-364) so the same topic never falls on the same weekday every week
+  const now = new Date();
+  const dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000);
+
+  // Pull recent video history to avoid repeating topics or speech angles
+  const recentVideos = videoDB.getArchive(14);
+  const recentTopicIds = recentVideos.map(v => v.topic);
+  const recentTitles = recentVideos.map(v => v.title).filter(Boolean);
+
+  let topic;
+  if (topicOverride) {
+    topic = TOPIC_ROTATION.find(t => t.id === topicOverride) || TOPIC_ROTATION[dayOfYear % TOPIC_ROTATION.length];
+  } else {
+    // Pick next topic in rotation, skipping any used in the last 3 days
+    const recentThree = recentTopicIds.slice(0, 3);
+    let idx = dayOfYear % TOPIC_ROTATION.length;
+    for (let attempt = 0; attempt < TOPIC_ROTATION.length; attempt++) {
+      const candidate = TOPIC_ROTATION[(idx + attempt) % TOPIC_ROTATION.length];
+      if (!recentThree.includes(candidate.id)) { topic = candidate; break; }
+    }
+    topic = topic || TOPIC_ROTATION[dayOfYear % TOPIC_ROTATION.length];
+  }
+
   if (!topicOverride) {
-    const existing = videoDB.getToday();
+    const existing = videoDB.getTodayStrict();
     if (existing) { console.log('[Pipeline] Today video already exists:', existing.title); return existing; }
   }
+
+  console.log('[Pipeline] Topic selected:', topic.name, '| Avoiding recent titles:', recentTitles.length);
   const videoId = uuidv4();
-  const script = await generateSpeech(topic);
+  const script = await generateSpeech(topic, recentTitles);
   const audioPath = await generateAudio(script, videoId);
   const rawTitle = script.split('.')[0].trim();
   const title = rawTitle.length <= 60 ? rawTitle : rawTitle.slice(0, 60).replace(/\s+\S*$/, '').trim();

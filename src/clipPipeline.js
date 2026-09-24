@@ -1,3 +1,4 @@
+const { CLAUDE_SONNET, CLAUDE_HAIKU } = require('./aiModels');
 // ProTeen Nation — Clip Pipeline
 // After the daily video is generated:
 //   1. Claude identifies the 6 best 30-second moments
@@ -63,7 +64,7 @@ Return ONLY valid JSON array of exactly 6 items with NON-OVERLAPPING time ranges
 
   try {
     const msg = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: CLAUDE_SONNET,
       max_tokens: 1500,
       messages: [{ role: 'user', content: prompt }],
     });
@@ -131,7 +132,7 @@ async function generateCaption(clip, platform, video) {
 
   try {
     const msg = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: CLAUDE_HAIKU,
       max_tokens: 300,
       messages: [{
         role: 'user',

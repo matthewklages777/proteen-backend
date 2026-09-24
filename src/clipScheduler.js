@@ -1,3 +1,4 @@
+const { CLAUDE_SONNET, CLAUDE_HAIKU } = require('./aiModels');
 // ProTeen Nation — Clip Scheduler & Content Sourcing Engine
 // Manages the full daily posting schedule:
 // - Slices ProTeen original videos into 30-sec clips
@@ -146,7 +147,7 @@ Respond ONLY with valid JSON array:
 
   try {
     const msg = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: CLAUDE_SONNET,
       max_tokens: 2000,
       messages: [{ role: 'user', content: prompt }],
     });
@@ -183,7 +184,7 @@ Respond with ONLY the caption text, ready to copy-paste.`;
 
   try {
     const msg = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: CLAUDE_SONNET,
       max_tokens: 400,
       messages: [{ role: 'user', content: prompt }],
     });
@@ -322,7 +323,7 @@ Respond ONLY with JSON:
 
   try {
     const msg = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: CLAUDE_SONNET,
       max_tokens: 200,
       messages: [{ role: 'user', content: prompt }],
     });

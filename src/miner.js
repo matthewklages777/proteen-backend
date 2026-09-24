@@ -1,3 +1,4 @@
+const { CLAUDE_SONNET, CLAUDE_HAIKU } = require('./aiModels');
 // ProTeen Nation — Article Miner
 // 1. Uses Tavily to search the web for relevant articles per topic
 // 2. Uses Claude to score, summarize, and filter each article
@@ -84,7 +85,7 @@ Set appropriate=false and score below 60 if the article contains:
   try {
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: CLAUDE_SONNET,
       max_tokens: 500,
       messages: [{ role: 'user', content: prompt }],
     });

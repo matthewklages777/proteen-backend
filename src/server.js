@@ -1,4 +1,12 @@
-// build: 2026-05-31-v2
+const { CLAUDE_SONNET, CLAUDE_HAIKU } = require('./aiModels');
+// build: 2026-08-20-v3
+
+// Extract the first JSON object from a Claude response — handles markdown code fences
+function parseClaudeJSON(text) {
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('No JSON object found in response');
+  return JSON.parse(match[0]);
+}
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -69,11 +77,11 @@ app.get('/api/quote/today', async (req, res) => {
       const Anthropic = require('@anthropic-ai/sdk');
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const msg = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
+        model: CLAUDE_HAIKU,
         max_tokens: 150,
         messages: [{ role: 'user', content: 'Write one short powerful quote (under 20 words) specifically for teenagers about growth, resilience, or potential. Make it original, not a famous quote. Return ONLY a JSON object like: {"text":"quote here","author":"ProTeen Nation"}' }],
       });
-      const parsed = JSON.parse(msg.content[0].text.trim().replace(/```json|```/g, '').trim());
+      const parsed = parseClaudeJSON(msg.content[0].text);
       quote = { ...parsed, date: new Date().toISOString().split('T')[0], generatedAt: new Date().toISOString() };
       quoteDB.saveQuote(quote);
       console.log('[Quote] On-demand quote generated:', quote.text);
@@ -295,11 +303,11 @@ app.post('/admin/api/quote/generate', adminAuth, async (req, res) => {
     const Anthropic = require('@anthropic-ai/sdk');
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const msg = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: CLAUDE_HAIKU,
       max_tokens: 200,
       messages: [{ role: 'user', content: 'Write one short powerful quote (under 20 words) specifically for teenagers about growth, resilience, or potential. Make it original, not a famous quote. Return ONLY a JSON object like: {"text":"quote here","author":"ProTeen Nation"}' }],
     });
-    const parsed = JSON.parse(msg.content[0].text.trim().replace(/```json|```/g, '').trim());
+    const parsed = parseClaudeJSON(msg.content[0].text);
     const quote = { ...parsed, date: new Date().toISOString().split('T')[0], generatedAt: new Date().toISOString() };
     quoteDB.saveQuote(quote);
     res.json({ success: true, quote });
@@ -431,7 +439,7 @@ app.get('/admin/api/scholarships/test-extraction', adminAuth, async (req, res) =
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const itemText = items.map((r,i) => `--- Item ${i+1} ---\nTitle: ${r.title}\nURL: ${r.url}\nContent: ${r.content}`).join('\n\n');
     const msg = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001', max_tokens: 1000,
+      model: CLAUDE_HAIKU, max_tokens: 1000,
       messages: [{ role: 'user', content: `Extract scholarships from these items as JSON array:\n${itemText}\nReturn only JSON array.` }],
     });
     res.json({ rssItems: items, claudeRaw: msg.content[0].text.slice(0, 1000) });
@@ -589,11 +597,11 @@ function startScheduler() {
       const Anthropic = require('@anthropic-ai/sdk');
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const msg = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
+        model: CLAUDE_HAIKU,
         max_tokens: 120,
         messages: [{ role: 'user', content: 'Write one short powerful quote (under 20 words) specifically for teenagers about growth, resilience, or potential. Make it original, not a famous quote. Return ONLY a JSON object like: {"text":"quote here","author":"ProTeen Nation"}' }],
       });
-      const parsed = JSON.parse(msg.content[0].text.trim());
+      const parsed = parseClaudeJSON(msg.content[0].text);
       quoteDB.saveQuote({ ...parsed, date: new Date().toISOString().split('T')[0], generatedAt: new Date().toISOString() });
       console.log('[Scheduler] Daily quote saved:', parsed.text);
     } catch (err) {
@@ -606,15 +614,23 @@ function startScheduler() {
     try {
       const video = await runDailyVideoPipeline();
       console.log('[Scheduler] Video ready:', video.title);
-      // Post full video to all platforms via Buffer at 6 AM CST
-      try {
-        const { postDailyVideo } = require('./poster');
-        await postDailyVideo(video);
-        console.log('[Scheduler] Daily video scheduled in Buffer ✅');
-      } catch (bufferErr) {
-        console.error('[Scheduler] Buffer daily video post failed:', bufferErr.message);
+
+      // Guard: skip if already posted today (prevents duplicates on server restart near 5 AM)
+      if (video.dailyPostedAt) {
+        console.log('[Scheduler] Daily video already posted at', video.dailyPostedAt, '— skipping Buffer post');
+      } else {
+        try {
+          const { postDailyVideo } = require('./poster');
+          await postDailyVideo(video);
+          videoDB.markDailyPosted(video.id);
+          console.log('[Scheduler] Daily video scheduled in Buffer ✅');
+        } catch (bufferErr) {
+          console.error('[Scheduler] Buffer daily video post failed:', bufferErr.message);
+        }
       }
+
       // Cut 6 clips and schedule via Buffer throughout the day
+      // runClipPipeline already guards on clipsScheduledAt internally
       try {
         await runClipPipeline(video);
       } catch (clipErr) {
@@ -663,11 +679,11 @@ function startScheduler() {
         const Anthropic = require('@anthropic-ai/sdk');
         const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
         const msg = await anthropic.messages.create({
-          model: 'claude-haiku-4-5-20251001',
+          model: CLAUDE_HAIKU,
           max_tokens: 120,
           messages: [{ role: 'user', content: 'Write one short powerful quote (under 20 words) specifically for teenagers about growth, resilience, or potential. Make it original, not a famous quote. Return ONLY a JSON object like: {"text":"quote here","author":"ProTeen Nation"}' }],
         });
-        const parsed = JSON.parse(msg.content[0].text.trim());
+        const parsed = parseClaudeJSON(msg.content[0].text);
         quoteDB.saveQuote({ ...parsed, date: new Date().toISOString().split('T')[0], generatedAt: new Date().toISOString() });
         console.log('[Server] Startup quote generated:', parsed.text);
       }
@@ -675,13 +691,13 @@ function startScheduler() {
       console.error('[Server] Startup quote generation failed:', err.message);
     }
     try {
-      const todayVideo = videoDB.getToday();
-      if (!todayVideo) {
+      const hasTodayVideo = !!videoDB.getTodayStrict();
+      if (!hasTodayVideo) {
         console.log('[Server] No video for today — running video pipeline...');
         await runDailyVideoPipeline();
         console.log('[Server] Startup video generation complete');
       } else {
-        console.log('[Server] Video OK:', todayVideo.title);
+        console.log('[Server] Video OK:', allVideos[0].title);
       }
     } catch (err) {
       console.error('[Server] Startup video generation failed:', err.message);
