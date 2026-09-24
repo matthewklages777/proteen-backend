@@ -1,10 +1,9 @@
-const { CLAUDE_SONNET, CLAUDE_HAIKU } = require('./aiModels');
 // ProTeen Nation — Clip Pipeline
 // After the daily video is generated:
 //   1. Claude identifies the 6 best 30-second moments
 //   2. FFmpeg cuts each clip from the full MP4
-//   3. Each clip is posted to Instagram, YouTube, Facebook, and X via webhooks
-//   (TikTok is manual — user downloads and posts)
+//   3. Each clip is posted to Instagram, YouTube, Facebook, and X via Buffer
+//   (TikTok is manual — Buffer cannot auto-publish video to TikTok)
 
 require('dotenv').config();
 const Anthropic = require('@anthropic-ai/sdk');
@@ -31,7 +30,7 @@ async function identifyClips(video) {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const prompt = `You are a social media editor for ProTeen Nation, a motivational platform for teenagers.
 
-Analyze this speech and identify 6 DIFFERENT 30-second clip moments for Instagram Reels, YouTube Shorts, and TikTok.
+Analyze this speech and identify the 6 BEST 30-second clip moments for Instagram Reels, YouTube Shorts, and TikTok.
 
 Video title: "${video.title}"
 Duration: ~${video.durationSecs} seconds
@@ -40,18 +39,13 @@ Script:
 ${video.script}
 ---
 
-CRITICAL RULES:
-- Each clip must be from a DIFFERENT part of the video — no two clips can overlap or cover the same moment
-- Spread clips across the full duration (beginning, early-middle, middle, late-middle, near-end, end)
-- Each clip must work as a standalone piece without needing context from the others
-- No two clips should have the same hookLine or feel like the same moment
-
 Pick moments that:
 - Start with a hook that grabs attention in the first 3 seconds
 - Are emotionally powerful or highly quotable
-- Cover variety: opening hook, core lesson, emotional peak, challenge/call-to-action, powerful quote, closing
+- Work as standalone clips without needing context
+- Cover variety: opening hook, core message, emotional peak, challenge, quote, closing
 
-Return ONLY valid JSON array of exactly 6 items with NON-OVERLAPPING time ranges:
+Return ONLY valid JSON array of exactly 6 items:
 [
   {
     "type": "hook",
@@ -64,54 +58,16 @@ Return ONLY valid JSON array of exactly 6 items with NON-OVERLAPPING time ranges
 
   try {
     const msg = await anthropic.messages.create({
-      model: CLAUDE_SONNET,
+      model: 'claude-sonnet-4-6',
       max_tokens: 1500,
       messages: [{ role: 'user', content: prompt }],
     });
     const text = msg.content[0].text.trim().replace(/```json|```/g, '').trim();
-    let clips = JSON.parse(text);
+    const clips = JSON.parse(text);
     console.log('[ClipPipeline] Identified', clips.length, 'clip moments');
-
-    // Enforce non-overlapping: if two clips share >50% of their duration, drop the later one
-    // and replace it with a segment from a gap in the video
-    clips = clips.slice(0, 6).sort((a, b) => (a.startSec || 0) - (b.startSec || 0));
-    const nonOverlapping = [clips[0]];
-    for (let i = 1; i < clips.length; i++) {
-      const prev = nonOverlapping[nonOverlapping.length - 1];
-      const cur  = clips[i];
-      const overlapEnd = Math.min(prev.endSec || 0, cur.endSec || 0);
-      const overlapStart = Math.max(prev.startSec || 0, cur.startSec || 0);
-      const overlap = Math.max(0, overlapEnd - overlapStart);
-      const curDuration = (cur.endSec || 0) - (cur.startSec || 0);
-      if (overlap / Math.max(curDuration, 1) < 0.5) {
-        nonOverlapping.push(cur);
-      } else {
-        console.warn(`[ClipPipeline] Dropping overlapping clip ${i + 1} (${cur.startSec}–${cur.endSec})`);
-      }
-    }
-    // If we dropped any, fill gaps with evenly-spaced replacements
-    if (nonOverlapping.length < 6) {
-      const step = Math.floor(video.durationSecs / 7);
-      const usedStarts = new Set(nonOverlapping.map(c => Math.floor((c.startSec || 0) / step)));
-      const types = ['hook','lesson','quote','challenge','emotional','closing'];
-      for (let s = 1; s <= 6 && nonOverlapping.length < 6; s++) {
-        if (!usedStarts.has(s)) {
-          nonOverlapping.push({
-            type: types[nonOverlapping.length] || 'clip',
-            startSec: step * s - 15,
-            endSec: step * s + 15,
-            hookLine: video.title,
-            caption: `"${video.title}" — ProTeen Nation 🔥`,
-          });
-          usedStarts.add(s);
-        }
-      }
-    }
-
-    return nonOverlapping.slice(0, 6);
+    return clips.slice(0, 6);
   } catch (err) {
     console.error('[ClipPipeline] Failed to identify clips:', err.message);
-    // Fallback: evenly space 6 clips through the video
     const step = Math.floor(video.durationSecs / 7);
     return Array.from({ length: 6 }, (_, i) => ({
       type: ['hook','lesson','quote','challenge','emotional','closing'][i],
@@ -123,35 +79,41 @@ Return ONLY valid JSON array of exactly 6 items with NON-OVERLAPPING time ranges
   }
 }
 
-// ── Step 2: Generate platform caption ─────────────────────────────────────
-async function generateCaption(clip, platform, video) {
+// ── Step 2: Generate clip caption (distinct from main video caption) ────────
+async function generateCaption(clip, video) {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const platformNames = { instagram: 'Instagram Reels', youtube: 'YouTube Shorts', facebook: 'Facebook Reels', x: 'X (Twitter)' };
-  const hashtagCount = platform === 'x' ? 3 : 10;
-  const maxLen = platform === 'x' ? 200 : 150;
+
+  const clipAngles = {
+    hook:      'opening hook — make them stop scrolling immediately',
+    lesson:    'key lesson or insight — make it land hard',
+    quote:     'quotable moment — short, punchy, highly shareable',
+    challenge: 'challenge or call-to-action — fire them up to act',
+    emotional: 'emotional moment — make them feel something real',
+    closing:   'powerful closing — leave them inspired and ready',
+  };
+  const angle = clipAngles[clip.type] || 'powerful moment';
+
+  const fallbackTags = {
+    hook:      '#ProTeenNation #MindsetShift #YoungAndHungry #TeenLife #NextGeneration #RiseAndGrind #FutureLeaders #BelieveInYourself',
+    lesson:    '#ProTeenNation #GrowthMindset #LifeLessons #TeenLife #LevelUp #YouthLeadership #NextGeneration #BelieveInYourself',
+    quote:     '#ProTeenNation #QuoteOfTheDay #MindsetShift #TeenLife #FutureLeaders #Inspired #YoungAndHungry #NextGeneration',
+    challenge: '#ProTeenNation #RiseAndGrind #ChallengeAccepted #TeenLife #LevelUp #YoungAndHungry #FutureLeaders #MindsetShift',
+    emotional: '#ProTeenNation #BelieveInYourself #GrowthMindset #TeenLife #YouAreEnough #NextGeneration #Inspired #FutureLeaders',
+    closing:   '#ProTeenNation #LevelUp #YoungAndHungry #TeenLife #FutureLeaders #MindsetShift #NextGeneration #GrowthMindset',
+  };
 
   try {
     const msg = await anthropic.messages.create({
-      model: CLAUDE_HAIKU,
+      model: 'claude-haiku-4-5',
       max_tokens: 300,
       messages: [{
         role: 'user',
-        content: `Write a powerful ${platformNames[platform]} caption for this ProTeen Nation motivational clip.
-Clip hook: "${clip.hookLine}"
-Topic: ${video.topicName}
-
-Rules:
-- Open with the most compelling line from the clip — not a generic intro
-- Write for teenagers (13–19) — direct, real, no corporate speak
-- Under ${maxLen} characters total
-- End with ONE of these engagement CTAs (pick the most fitting): "💾 Save this.", "👇 Tag someone who needs this.", "💬 Tell me your biggest challenge below.", "🔁 Share this with someone going through it."
-- Add ${hashtagCount} hashtags at the end, include #ProTeenNation #WeAreTheFuture
-- Return ONLY the caption text, nothing else`,
+        content: `Write a short, punchy social media caption for a ProTeen Nation short clip.\n\nClip type: ${angle}\nHook line: "${clip.hookLine}"\nTopic: ${video.topicName}\n\nRules:\n- Under 140 characters before the hashtags\n- Match the energy of the clip type (a challenge clip reads differently than a quote clip)\n- End with 8 hashtags that are DIFFERENT from the main daily video\n- The main video already uses: #ProTeenNation #WeAreTheFuture #TeenMotivation #Teens #Motivation — do NOT use these\n- Use niche tags like: #MindsetShift #GrowthMindset #YoungAndHungry #TeenLife #RiseAndGrind #NextGeneration #YouthLeadership #BelieveInYourself #LevelUp #FutureLeaders\n- Always keep #ProTeenNation\n- Return ONLY the caption text, nothing else`,
       }],
     });
     return msg.content[0].text.trim();
   } catch {
-    return `${clip.hookLine}\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${video.topicName.replace(/\s/g,'')}`;
+    return `${clip.hookLine}\n\n${fallbackTags[clip.type] || fallbackTags.hook}`;
   }
 }
 
@@ -161,7 +123,6 @@ function msUntil(timeStr) {
   const now = new Date();
   const target = new Date();
   target.setHours(h, m, 0, 0);
-  // If time already passed today, schedule for tomorrow
   if (target <= now) target.setDate(target.getDate() + 1);
   return target.getTime() - now.getTime();
 }
@@ -198,83 +159,58 @@ async function postClip(clipUrl, caption, platform, clip, video, scheduleTime) {
 }
 
 // ── Main: run the full clip pipeline for a video ──────────────────────────
-async function runClipPipeline(video, { force = false } = {}) {
+async function runClipPipeline(video) {
   if (!video || !video.videoPath || !video.script) {
     console.log('[ClipPipeline] No video or script — skipping');
     return;
   }
 
-  // Guard: don't double-schedule clips for the same video
-  if (!force && video.clipsScheduledAt) {
-    console.log('[ClipPipeline] Clips already scheduled for this video at', video.clipsScheduledAt, '— skipping. Pass force=true to override.');
-    return;
-  }
-
   console.log('\n[ClipPipeline] Starting clip pipeline for:', video.title);
 
-  // Step 1: Identify 6 clip moments
   const clipMoments = await identifyClips(video);
   if (!clipMoments.length) {
     console.error('[ClipPipeline] No clip moments identified');
     return;
   }
 
-  // Verify the source video file exists before attempting any clip cuts
-  const fs = require('fs');
-  if (video.videoPath && !fs.existsSync(video.videoPath)) {
-    console.warn('[ClipPipeline] videoPath not found on disk:', video.videoPath, '— clips will use full video URL');
-  }
-
-  // Step 2: Cut all 6 clips — each clip is attempted independently.
-  // IMPORTANT: we track every URL we've already scheduled. If FFmpeg fails for a clip
-  // and the fallback URL is identical to a previous clip's URL, we skip that slot
-  // entirely rather than posting the same video twice in one day.
   const readyClips = [];
-  const scheduledUrls = new Set();
+  let ffmpegWorking = true;
 
   for (let i = 0; i < clipMoments.length; i++) {
-    const clip     = clipMoments[i];
-    const clipId   = `${video.id}_clip${i + 1}`;
+    const clip    = clipMoments[i];
+    const clipId  = `${video.id}_clip${i + 1}`;
     const startSec = Math.max(0, Math.floor(clip.startSec || 0));
     const endSec   = Math.min(video.durationSecs, Math.ceil(clip.endSec || startSec + 30));
 
     console.log(`[ClipPipeline] Cutting clip ${i + 1}/6: ${startSec}s–${endSec}s (${clip.type})`);
 
     let clipUrl;
-    try {
-      await renderClip(video.videoPath, startSec, endSec, clipId);
-      clipUrl = `${BACKEND_URL}/videos/${clipId}_clip.mp4`;
-      console.log(`[ClipPipeline] Clip ${i + 1} ready: ${clipUrl}`);
-    } catch (err) {
-      console.warn(`[ClipPipeline] FFmpeg failed on clip ${i + 1}:`, err.message);
-      clipUrl = video.videoUrl; // last-resort fallback: full video
-      console.log(`[ClipPipeline] Clip ${i + 1} fallback → full video URL`);
+    if (ffmpegWorking) {
+      try {
+        await renderClip(video.videoPath, startSec, endSec, clipId);
+        clipUrl = `${BACKEND_URL}/videos/${clipId}_clip.mp4`;
+        console.log(`[ClipPipeline] Clip ${i + 1} ready: ${clipUrl}`);
+      } catch (err) {
+        console.warn(`[ClipPipeline] FFmpeg failed on clip ${i + 1}, using full video URL:`, err.message);
+        ffmpegWorking = false;
+        clipUrl = video.videoUrl;
+      }
+    } else {
+      clipUrl = video.videoUrl;
+      console.log(`[ClipPipeline] Using full video URL for clip ${i + 1} (FFmpeg unavailable)`);
     }
 
-    // Guard: never schedule the same URL into two different time slots
-    if (scheduledUrls.has(clipUrl)) {
-      console.warn(`[ClipPipeline] Clip ${i + 1} URL already used in an earlier slot — skipping to avoid duplicate post`);
-      continue;
-    }
-    scheduledUrls.add(clipUrl);
-
-    // Generate a clip-specific caption (use 'instagram' as the base platform style)
-    const caption = await generateCaption(clip, 'instagram', video);
+    const caption = await generateCaption(clip, video);
     readyClips.push({ clip, clipUrl, caption, index: i + 1 });
   }
 
-  console.log(`[ClipPipeline] ${readyClips.length}/6 unique clips ready. Scheduling via Buffer...`);
+  console.log(`[ClipPipeline] ${readyClips.length} posts ready (ffmpegWorking=${ffmpegWorking}). Scheduling via Buffer...`);
 
-  // Step 3: Schedule all posts via Buffer (spreads posts throughout the day automatically)
   try {
     const { postClips } = require('./poster');
     const bufferClips = readyClips.map(c => ({ clipUrl: c.clipUrl, caption: c.caption }));
     await postClips(video, bufferClips);
     console.log('[ClipPipeline] All posts scheduled in Buffer ✅');
-    // Mark video so clips are never double-scheduled
-    const { videoDB } = require('./videoDatabase');
-    video.clipsScheduledAt = new Date().toISOString();
-    videoDB.saveVideo(video);
   } catch (err) {
     console.error('[ClipPipeline] Buffer scheduling failed:', err.message);
   }
