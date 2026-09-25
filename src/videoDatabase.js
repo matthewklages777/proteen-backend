@@ -42,12 +42,32 @@ const videoDB = {
     return video;
   },
 
-  // Get today's video
+  // Get today's video — falls back to most recent so the app always has something to show
   getToday() {
     initFile(VIDEOS_DB, { videos: [] });
     const data = readFile(VIDEOS_DB);
     const today = new Date().toISOString().split('T')[0];
+    return data.videos.find(v => v.date === today) || data.videos[0] || null;
+  },
+
+  // Strict check — only returns a video if one was actually generated today
+  // Used by the pipeline to decide whether to generate, never by the app API
+  getTodayStrict() {
+    initFile(VIDEOS_DB, { videos: [] });
+    const data = readFile(VIDEOS_DB);
+    const today = new Date().toISOString().split('T')[0];
     return data.videos.find(v => v.date === today) || null;
+  },
+
+  // Mark video as posted to social media (prevents double-posting)
+  markDailyPosted(videoId) {
+    initFile(VIDEOS_DB, { videos: [] });
+    const data = readFile(VIDEOS_DB);
+    const idx = data.videos.findIndex(v => v.id === videoId);
+    if (idx >= 0) {
+      data.videos[idx].dailyPostedAt = new Date().toISOString();
+    }
+    writeFile(VIDEOS_DB, data);
   },
 
   // Get recent videos for archive clips (last N days)
