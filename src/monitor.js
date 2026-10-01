@@ -25,7 +25,7 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ── Alert thresholds ───────────────────────────────────────────────────────
 const THRESHOLDS = {
-  articleMineMaxAgeHours: 6,      // Alert if no mining run in 6+ hours
+  articleMineMaxAgeHours: 30,     // Alert if no mining run in 30+ hours (runs daily)
   videoMaxAgeHours: 25,           // Alert if today's video is missing by 7 AM
   schedulePostMaxDelayMins: 30,   // Alert if a scheduled post is 30+ min late
   websiteTimeoutMs: 8000,         // Alert if website takes 8+ sec to load
