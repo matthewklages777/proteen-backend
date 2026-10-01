@@ -43,20 +43,21 @@ async function bufferQuery(variables) {
 }
 
 // Platform-specific metadata required by Buffer API
-// metadata must be nested under the platform key (e.g. metadata: { instagram: { type: 'reel' } })
-function getPlatformMetadata(platform, title) {
+// metadata must be nested under the platform key
+// isClip: clips are short enough for Facebook Reels (≤90s); daily videos are not
+function getPlatformMetadata(platform, title, isClip = false) {
   switch (platform) {
-    case 'instagram': return { instagram: { type: 'reel' } };
-    case 'facebook':  return { facebook:  { type: 'reel' } };
+    case 'instagram': return { instagram: { type: 'reel', shouldShareToFeed: true } };
+    case 'facebook':  return isClip ? { facebook: { type: 'reel' } } : {};
     case 'youtube':   return { youtube:   { title: (title || 'ProTeen Nation Daily').slice(0, 100), categoryId: '27' } };
     default:          return {};
   }
 }
 
 // Schedule a single post to one Buffer channel
-async function schedulePost({ channelId, platform, text, mediaUrl, dueAt, title }) {
+async function schedulePost({ channelId, platform, text, mediaUrl, dueAt, title, isClip = false }) {
   const inFuture = dueAt && new Date(dueAt).getTime() > Date.now() + 60000;
-  const metadata = getPlatformMetadata(platform, title);
+  const metadata = getPlatformMetadata(platform, title, isClip);
 
   const base = {
     channelId,
@@ -148,7 +149,7 @@ async function postClips(video, clips) {
     let passed = 0, failed = 0;
     for (const [platform, channelId] of Object.entries(CHANNELS)) {
       const caption = platform === 'youtube' ? `${baseCaption}\n#Shorts` : baseCaption;
-      clipResults[platform] = await schedulePost({ channelId, platform, text: caption, mediaUrl: clip.clipUrl, dueAt, title: video.title });
+      clipResults[platform] = await schedulePost({ channelId, platform, text: caption, mediaUrl: clip.clipUrl, dueAt, title: video.title, isClip: true });
       clipResults[platform].success ? passed++ : failed++;
       await delay(600);
     }
