@@ -42,27 +42,32 @@ async function bufferQuery(variables) {
   return res.data.data;
 }
 
+// Platform-specific metadata required by Buffer API
+function getPlatformMetadata(platform, title) {
+  switch (platform) {
+    case 'instagram': return { type: 'reel' };
+    case 'facebook':  return { type: 'reel' };
+    case 'youtube':   return { type: 'video', title: (title || 'ProTeen Nation Daily').slice(0, 100), category: 'Education' };
+    case 'twitter':   return {};
+    default:          return {};
+  }
+}
+
 // Schedule a single post to one Buffer channel
-async function schedulePost({ channelId, platform, text, mediaUrl, dueAt }) {
+async function schedulePost({ channelId, platform, text, mediaUrl, dueAt, title }) {
   const inFuture = dueAt && new Date(dueAt).getTime() > Date.now() + 60000;
+  const metadata = getPlatformMetadata(platform, title);
+
+  const base = {
+    channelId,
+    text,
+    assets: mediaUrl ? [{ video: { url: mediaUrl } }] : [],
+    ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
+  };
 
   const input = inFuture
-    ? {
-        // Custom scheduled: provide exact time, no schedulingType (they conflict)
-        channelId,
-        text,
-        mode: 'customScheduled',
-        dueAt,
-        assets: mediaUrl ? [{ video: { url: mediaUrl } }] : [],
-      }
-    : {
-        // Add to queue: Buffer picks the next available slot
-        channelId,
-        text,
-        schedulingType: 'automatic',
-        mode: 'addToQueue',
-        assets: mediaUrl ? [{ video: { url: mediaUrl } }] : [],
-      };
+    ? { ...base, mode: 'customScheduled', dueAt }
+    : { ...base, schedulingType: 'automatic', mode: 'addToQueue' };
 
   console.log(`[Buffer] Posting to ${platform} (${channelId}) | ${inFuture ? `scheduled ${dueAt}` : 'add to queue'}`);
 
@@ -105,7 +110,7 @@ async function postDailyVideo(video) {
       results[platform] = { skipped: true, reason: 'clip-only platform' };
       continue;
     }
-    results[platform] = await schedulePost({ channelId, platform, text: caption, mediaUrl: video.videoUrl, dueAt: dueAt?.toISOString() });
+    results[platform] = await schedulePost({ channelId, platform, text: caption, mediaUrl: video.videoUrl, dueAt: dueAt?.toISOString(), title: video.title });
     results[platform].success ? passed++ : failed++;
     await delay(600);
   }
@@ -143,7 +148,7 @@ async function postClips(video, clips) {
     let passed = 0, failed = 0;
     for (const [platform, channelId] of Object.entries(CHANNELS)) {
       const caption = platform === 'youtube' ? `${baseCaption}\n#Shorts` : baseCaption;
-      clipResults[platform] = await schedulePost({ channelId, platform, text: caption, mediaUrl: clip.clipUrl, dueAt });
+      clipResults[platform] = await schedulePost({ channelId, platform, text: caption, mediaUrl: clip.clipUrl, dueAt, title: video.title });
       clipResults[platform].success ? passed++ : failed++;
       await delay(600);
     }
