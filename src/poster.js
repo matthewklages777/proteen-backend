@@ -43,12 +43,12 @@ async function bufferQuery(variables) {
 }
 
 // Platform-specific metadata required by Buffer API
+// metadata must be nested under the platform key (e.g. metadata: { instagram: { type: 'reel' } })
 function getPlatformMetadata(platform, title) {
   switch (platform) {
-    case 'instagram': return { type: 'reel' };
-    case 'facebook':  return { type: 'reel' };
-    case 'youtube':   return { type: 'video', title: (title || 'ProTeen Nation Daily').slice(0, 100), category: 'Education' };
-    case 'twitter':   return {};
+    case 'instagram': return { instagram: { type: 'reel' } };
+    case 'facebook':  return { facebook:  { type: 'reel' } };
+    case 'youtube':   return { youtube:   { title: (title || 'ProTeen Nation Daily').slice(0, 100), categoryId: '27' } };
     default:          return {};
   }
 }
