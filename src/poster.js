@@ -48,7 +48,7 @@ async function bufferQuery(variables) {
 function getPlatformMetadata(platform, title, isClip = false) {
   switch (platform) {
     case 'instagram': return { instagram: { type: 'reel', shouldShareToFeed: true } };
-    case 'facebook':  return isClip ? { facebook: { type: 'reel' } } : {};
+    case 'facebook':  return isClip ? { facebook: { type: 'reel' } } : { facebook: { type: 'post' } };
     case 'youtube':   return { youtube:   { title: (title || 'ProTeen Nation Daily').slice(0, 100), categoryId: '27' } };
     default:          return {};
   }

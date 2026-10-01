@@ -56,33 +56,60 @@ Return ONLY valid JSON array of exactly 6 items:
   }
 ]`;
 
+  let text = null;
   try {
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1500,
       messages: [{ role: 'user', content: prompt }],
     });
-    const text = msg.content[0].text.trim().replace(/```json|```/g, '').trim();
-    const clips = JSON.parse(text);
-    console.log('[ClipPipeline] Identified', clips.length, 'clip moments');
-    return clips.slice(0, 6);
+    text = msg.content[0].text.trim().replace(/```json|```/g, '').trim();
   } catch (err) {
-    console.error('[ClipPipeline] Failed to identify clips:', err.message);
-    const step = Math.floor(video.durationSecs / 7);
-    return Array.from({ length: 6 }, (_, i) => ({
-      type: ['hook','lesson','quote','challenge','emotional','closing'][i],
-      startSec: step * (i + 1) - 15,
-      endSec: step * (i + 1) + 15,
-      hookLine: video.title,
-      caption: `"${video.title}" — ProTeen Nation 🔥`,
-    }));
+    const m = (err.message || '') + JSON.stringify(err.error || '');
+    const isCredits = m.includes('credit balance') || m.includes('insufficient_quota') || m.includes('too low');
+    if (!isCredits) console.error('[ClipPipeline] Claude clip ID failed:', err.message);
+    else console.log('[ClipPipeline] Claude credits exhausted — falling back to GPT-4o...');
   }
+
+  if (!text) {
+    try {
+      const { OpenAI } = require('openai');
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      const c = await openai.chat.completions.create({
+        model: 'gpt-4o', max_tokens: 1500,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      text = c.choices[0].message.content.trim().replace(/```json|```/g, '').trim();
+    } catch (err) {
+      console.error('[ClipPipeline] GPT-4o clip ID failed:', err.message);
+    }
+  }
+
+  try {
+    if (text) {
+      const clips = JSON.parse(text);
+      console.log('[ClipPipeline] Identified', clips.length, 'clip moments');
+      return clips.slice(0, 6);
+    }
+  } catch (err) {
+    console.error('[ClipPipeline] Failed to parse clip JSON:', err.message);
+  }
+
+  // Final fallback: evenly-spaced clips
+  console.log('[ClipPipeline] Using evenly-spaced clip fallback');
+  const step = Math.floor(video.durationSecs / 7);
+  return Array.from({ length: 6 }, (_, i) => ({
+    type: ['hook','lesson','quote','challenge','emotional','closing'][i],
+    startSec: step * (i + 1) - 15,
+    endSec: step * (i + 1) + 15,
+    hookLine: video.title,
+    caption: `"${video.title}" — ProTeen Nation 🔥`,
+  }));
 }
 
 // ── Step 2: Generate clip caption (distinct from main video caption) ────────
 async function generateCaption(clip, video) {
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
   const clipAngles = {
     hook:      'opening hook — make them stop scrolling immediately',
     lesson:    'key lesson or insight — make it land hard',
@@ -102,19 +129,35 @@ async function generateCaption(clip, video) {
     closing:   '#ProTeenNation #LevelUp #YoungAndHungry #TeenLife #FutureLeaders #MindsetShift #NextGeneration #GrowthMindset',
   };
 
+  const captionPrompt = `Write a short, punchy social media caption for a ProTeen Nation short clip.\n\nClip type: ${angle}\nHook line: "${clip.hookLine}"\nTopic: ${video.topicName}\n\nRules:\n- Under 140 characters before the hashtags\n- Match the energy of the clip type (a challenge clip reads differently than a quote clip)\n- End with 8 hashtags that are DIFFERENT from the main daily video\n- The main video already uses: #ProTeenNation #WeAreTheFuture #TeenMotivation #Teens #Motivation — do NOT use these\n- Use niche tags like: #MindsetShift #GrowthMindset #YoungAndHungry #TeenLife #RiseAndGrind #NextGeneration #YouthLeadership #BelieveInYourself #LevelUp #FutureLeaders\n- Always keep #ProTeenNation\n- Return ONLY the caption text, nothing else`;
+
   try {
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const msg = await anthropic.messages.create({
       model: 'claude-haiku-4-5',
       max_tokens: 300,
-      messages: [{
-        role: 'user',
-        content: `Write a short, punchy social media caption for a ProTeen Nation short clip.\n\nClip type: ${angle}\nHook line: "${clip.hookLine}"\nTopic: ${video.topicName}\n\nRules:\n- Under 140 characters before the hashtags\n- Match the energy of the clip type (a challenge clip reads differently than a quote clip)\n- End with 8 hashtags that are DIFFERENT from the main daily video\n- The main video already uses: #ProTeenNation #WeAreTheFuture #TeenMotivation #Teens #Motivation — do NOT use these\n- Use niche tags like: #MindsetShift #GrowthMindset #YoungAndHungry #TeenLife #RiseAndGrind #NextGeneration #YouthLeadership #BelieveInYourself #LevelUp #FutureLeaders\n- Always keep #ProTeenNation\n- Return ONLY the caption text, nothing else`,
-      }],
+      messages: [{ role: 'user', content: captionPrompt }],
     });
     return msg.content[0].text.trim();
-  } catch {
-    return `${clip.hookLine}\n\n${fallbackTags[clip.type] || fallbackTags.hook}`;
+  } catch (err) {
+    const m = (err.message || '') + JSON.stringify(err.error || '');
+    const isCredits = m.includes('credit balance') || m.includes('insufficient_quota') || m.includes('too low');
+    if (!isCredits) { console.error('[ClipPipeline] Claude caption failed:', err.message); }
+    else {
+      try {
+        const { OpenAI } = require('openai');
+        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+        const c = await openai.chat.completions.create({
+          model: 'gpt-4o-mini', max_tokens: 300,
+          messages: [{ role: 'user', content: captionPrompt }],
+        });
+        return c.choices[0].message.content.trim();
+      } catch (err2) {
+        console.error('[ClipPipeline] GPT-4o-mini caption failed:', err2.message);
+      }
+    }
   }
+  return `${clip.hookLine}\n\n${fallbackTags[clip.type] || fallbackTags.hook}`;
 }
 
 // ── Helper: ms until a given HH:MM time today ─────────────────────────────

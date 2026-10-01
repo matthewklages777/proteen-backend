@@ -1,7 +1,7 @@
-const { CLAUDE_SONNET, CLAUDE_HAIKU } = require('./aiModels');
+const { CLAUDE_SONNET } = require('./aiModels');
 // ProTeen Nation — Article Miner
 // 1. Uses Tavily to search the web for relevant articles per topic
-// 2. Uses Claude to score, summarize, and filter each article
+// 2. Uses Claude (with GPT-4o fallback) to score, summarize, and filter each article
 // 3. Saves approved candidates to the review queue
 
 require('dotenv').config();
@@ -82,6 +82,9 @@ Set appropriate=false and score below 60 if the article contains:
 - Advertising disguised as content
 - Anything that could harm teen wellbeing`;
 
+  let text = null;
+
+  // Try Claude first
   try {
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const message = await anthropic.messages.create({
@@ -89,12 +92,34 @@ Set appropriate=false and score below 60 if the article contains:
       max_tokens: 500,
       messages: [{ role: 'user', content: prompt }],
     });
-
-    const text = message.content[0].text.trim();
-    const json = JSON.parse(text.replace(/```json|```/g, '').trim());
-    return json;
+    text = message.content[0].text.trim();
   } catch (err) {
-    console.error('[Miner] Claude evaluation failed:', err.message);
+    const msg = (err.message || '') + JSON.stringify(err.error || '');
+    const isCredits = msg.includes('credit balance') || msg.includes('insufficient_quota') || msg.includes('too low');
+    if (!isCredits) { console.error('[Miner] Claude evaluation failed:', err.message); return null; }
+    console.log('[Miner] Claude credits exhausted — falling back to GPT-4o...');
+  }
+
+  // Fallback to GPT-4o
+  if (!text) {
+    try {
+      const { OpenAI } = require('openai');
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o', max_tokens: 500,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      text = completion.choices[0].message.content.trim();
+    } catch (err) {
+      console.error('[Miner] GPT-4o evaluation failed:', err.message);
+      return null;
+    }
+  }
+
+  try {
+    return JSON.parse(text.replace(/```json|```/g, '').trim());
+  } catch (err) {
+    console.error('[Miner] Failed to parse evaluation JSON:', err.message);
     return null;
   }
 }
