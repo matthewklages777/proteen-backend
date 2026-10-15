@@ -1,9 +1,6 @@
 [build]
 builder = "nixpacks"
 
-[build.nixpacksConfig]
-pkgs = ["ffmpeg"]
-
 [deploy]
 startCommand = "node src/server.js"
 healthcheckPath = "/health"
