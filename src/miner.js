@@ -133,9 +133,13 @@ async function runMiningCycle() {
     console.log(`[Miner] Mining topic: ${topic.name}`);
     const topicArticles = [];
 
-    // Search with multiple queries, stop when we have enough
+    // Cap at 2 Tavily queries per topic (16 calls/day × 30 = ~480/month, well under 1000 free)
+    const MAX_QUERIES_PER_TOPIC = 2;
+    let queriesRun = 0;
     for (const query of topic.searchQueries) {
       if (topicArticles.length >= MAX_PER_TOPIC * 2) break;
+      if (queriesRun >= MAX_QUERIES_PER_TOPIC) break;
+      queriesRun++;
 
       const results = await searchArticles(topic, query);
       for (const result of results) {

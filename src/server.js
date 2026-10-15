@@ -491,14 +491,16 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'ProTeen Nation Backend', time: new Date().toISOString(), version: '2026-05-31-v2', commit: process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) || 'local' });
 });
 
-// Quick FFmpeg availability check — no auth required for diagnosis
+// Quick FFmpeg availability check — tests system ffmpeg first, then npm static
 app.get('/diag/ffmpeg', async (req, res) => {
-  const { execFile } = require('child_process');
-  const ffmpegPath = require('ffmpeg-static');
-  execFile(ffmpegPath, ['-version'], { timeout: 10000 }, (err, stdout, stderr) => {
-    if (err) return res.json({ available: false, error: err.message, stderr });
+  const { execFile, execSync } = require('child_process');
+  const npmFfmpegPath = require('ffmpeg-static');
+  const systemPath = (() => { try { return execSync('which ffmpeg', { stdio: ['pipe','pipe','pipe'] }).toString().trim(); } catch { return null; } })();
+  const activePath = systemPath || npmFfmpegPath;
+  execFile(activePath, ['-version'], { timeout: 10000 }, (err, stdout, stderr) => {
+    if (err) return res.json({ available: false, error: err.message, stderr, systemPath, npmPath: npmFfmpegPath });
     const version = (stdout || stderr || '').split('\n')[0];
-    res.json({ available: true, version, path: ffmpegPath });
+    res.json({ available: true, version, path: activePath, usingSystem: !!systemPath });
   });
 });
 
