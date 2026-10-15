@@ -7,8 +7,13 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
-ffmpeg.setFfmpegPath(ffmpegPath);
-ffmpeg.setFfprobePath(ffprobePath);
+// Prefer system FFmpeg (installed via nixpacks) over the npm static binary
+const { execSync } = require('child_process');
+const systemFfmpeg = (() => { try { return execSync('which ffmpeg', { stdio: ['pipe','pipe','pipe'] }).toString().trim(); } catch { return null; } })();
+const systemFfprobe = (() => { try { return execSync('which ffprobe', { stdio: ['pipe','pipe','pipe'] }).toString().trim(); } catch { return null; } })();
+ffmpeg.setFfmpegPath(systemFfmpeg || ffmpegPath);
+ffmpeg.setFfprobePath(systemFfprobe || ffprobePath);
+console.log('[Renderer] FFmpeg path:', systemFfmpeg || ffmpegPath, systemFfmpeg ? '(system)' : '(npm static)');
 
 const VIDEO_DIR  = path.join(__dirname, '../data/videos');
 const TMP_DIR    = path.join(__dirname, '../data/tmp');
@@ -289,6 +294,7 @@ async function renderVideo(audioPath, videoRecord) {
     console.log('[Renderer] Fetching mixed imagery for topic:', videoRecord.topic);
     const imageUrls  = await fetchTopicImages(videoRecord.topic);
     console.log('[Renderer] Downloading', imageUrls.length, 'images...');
+    if (!imageUrls.length) throw new Error('No images returned from Pixabay — using static fallback');
     const imagePaths = await downloadImages(imageUrls, tmpDir);
 
     const totalDuration = await getAudioDuration(audioPath);
@@ -374,9 +380,10 @@ async function renderClip(fullVideoPath, startSec, endSec, clipId) {
 
   // Use child_process.execFile directly — more reliable than fluent-ffmpeg for simple cuts
   const { execFile } = require('child_process');
+  const activeFfmpegPath = systemFfmpeg || ffmpegPath;
 
   const runFfmpeg = (args, timeoutMs = 120000) => new Promise((resolve, reject) => {
-    const proc = execFile(ffmpegPath, args, { timeout: timeoutMs }, (err, stdout, stderr) => {
+    const proc = execFile(activeFfmpegPath, args, { timeout: timeoutMs }, (err, stdout, stderr) => {
       if (err) {
         reject(new Error(stderr || err.message));
       } else {
