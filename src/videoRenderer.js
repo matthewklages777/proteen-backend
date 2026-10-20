@@ -1,19 +1,15 @@
 require('dotenv').config();
 const ffmpeg = require('fluent-ffmpeg');
-const ffmpegPath = require('ffmpeg-static');
+const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
 const ffprobePath = require('@ffprobe-installer/ffprobe').path;
 const sharp = require('sharp');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
-// Prefer system FFmpeg (installed via nixpacks) over the npm static binary
-const { execSync } = require('child_process');
-const systemFfmpeg = (() => { try { return execSync('which ffmpeg', { stdio: ['pipe','pipe','pipe'] }).toString().trim(); } catch { return null; } })();
-const systemFfprobe = (() => { try { return execSync('which ffprobe', { stdio: ['pipe','pipe','pipe'] }).toString().trim(); } catch { return null; } })();
-ffmpeg.setFfmpegPath(systemFfmpeg || ffmpegPath);
-ffmpeg.setFfprobePath(systemFfprobe || ffprobePath);
-console.log('[Renderer] FFmpeg path:', systemFfmpeg || ffmpegPath, systemFfmpeg ? '(system)' : '(npm static)');
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+ffmpeg.setFfprobePath(ffprobePath);
+console.log('[Renderer] FFmpeg:', ffmpegInstaller.path, '| version:', ffmpegInstaller.version);
 
 const VIDEO_DIR  = path.join(__dirname, '../data/videos');
 const TMP_DIR    = path.join(__dirname, '../data/tmp');
@@ -380,7 +376,7 @@ async function renderClip(fullVideoPath, startSec, endSec, clipId) {
 
   // Use child_process.execFile directly — more reliable than fluent-ffmpeg for simple cuts
   const { execFile } = require('child_process');
-  const activeFfmpegPath = systemFfmpeg || ffmpegPath;
+  const activeFfmpegPath = ffmpegInstaller.path;
 
   const runFfmpeg = (args, timeoutMs = 120000) => new Promise((resolve, reject) => {
     const proc = execFile(activeFfmpegPath, args, { timeout: timeoutMs }, (err, stdout, stderr) => {
