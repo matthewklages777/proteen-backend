@@ -232,9 +232,15 @@ async function runClipPipeline(video, opts = {}) {
   for (let i = 0; i < clipMoments.length; i++) {
     const clip    = clipMoments[i];
     const clipId  = `${video.id}_clip${i + 1}`;
-    const startSec = Math.max(0, Math.floor(clip.startSec || clip.estimatedStartSec || 0));
     const durSecs  = video.durationSecs || Math.ceil(video.script.split(' ').length / 2.5);
+    const startSec = Math.max(0, Math.min(Math.floor(clip.startSec || clip.estimatedStartSec || 0), durSecs - 10));
     const endSec   = Math.min(durSecs, Math.ceil(clip.endSec || clip.estimatedEndSec || startSec + 30));
+
+    // Skip clips with invalid or tiny durations (AI sometimes generates out-of-bounds times)
+    if (endSec - startSec < 8) {
+      console.warn(`[ClipPipeline] Skipping clip ${i + 1} — duration too short (${startSec}s–${endSec}s, video=${durSecs}s)`);
+      continue;
+    }
 
     console.log(`[ClipPipeline] Cutting clip ${i + 1}/6: ${startSec}s–${endSec}s (${clip.type})`);
 

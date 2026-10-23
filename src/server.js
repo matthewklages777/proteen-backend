@@ -385,9 +385,9 @@ app.get('/admin/api/buffer/channels', adminAuth, async (req, res) => {
   const token = process.env.BUFFER_ACCESS_TOKEN;
   if (!token) return res.status(500).json({ error: 'BUFFER_ACCESS_TOKEN not set' });
   try {
-    // Use the correct Buffer GraphQL structure (no 'nodes' wrapper on Channel type)
+    // Use the correct Buffer GraphQL structure — Channel type only has id, service, name, serviceId
     const r = await axios.post('https://api.buffer.com/graphql',
-      { query: `{ organization(id: "6a0b4a9276619973c3a551a3") { channels { id service name serviceId status } } }` },
+      { query: `{ organization(id: "6a0b4a9276619973c3a551a3") { channels { id service name serviceId } } }` },
       { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 15000 }
     );
     res.json(r.data);
