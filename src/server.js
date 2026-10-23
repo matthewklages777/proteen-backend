@@ -173,7 +173,14 @@ app.get('/admin/api/schedule/template', adminAuth, (req, res) => {
 });
 
 app.get('/admin/api/webhooks', adminAuth, (req, res) => {
-  res.json({ webhooks: getWebhookStatus() });
+  // getWebhookStatus not implemented — show configured webhook env vars
+  const platforms = ['INSTAGRAM', 'YOUTUBE', 'FACEBOOK', 'X', 'TIKTOK'];
+  const webhooks = {};
+  platforms.forEach(p => {
+    const url = process.env[`WEBHOOK_${p}`];
+    webhooks[p] = url ? { configured: true, url: url.slice(0, 50) + '...' } : { configured: false };
+  });
+  res.json({ webhooks });
 });
 
 app.post('/admin/api/schedule/build', adminAuth, async (req, res) => {
@@ -348,8 +355,9 @@ app.post('/admin/api/clips/generate', adminAuth, async (req, res) => {
   try {
     const video = videoDB.getToday();
     if (!video) return res.status(404).json({ error: 'No video for today yet. Generate a video first.' });
-    res.json({ message: 'Clip pipeline started. 6 clips will be cut and posted.' });
-    runClipPipeline(video).catch(err => console.error('[Admin] Clip pipeline error:', err.message));
+    const force = req.query.force !== 'false'; // default true for manual triggers
+    res.json({ message: 'Clip pipeline started. 6 clips will be cut and posted.', force });
+    runClipPipeline(video, { force }).catch(err => console.error('[Admin] Clip pipeline error:', err.message));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -377,14 +385,33 @@ app.get('/admin/api/buffer/channels', adminAuth, async (req, res) => {
   const token = process.env.BUFFER_ACCESS_TOKEN;
   if (!token) return res.status(500).json({ error: 'BUFFER_ACCESS_TOKEN not set' });
   try {
+    // Use the correct Buffer GraphQL structure (no 'nodes' wrapper on Channel type)
     const r = await axios.post('https://api.buffer.com/graphql',
-      { query: `{ organization(id: "6a0b4a9276619973c3a551a3") { channels { nodes { id service name serviceId status } } } }` },
+      { query: `{ organization(id: "6a0b4a9276619973c3a551a3") { channels { id service name serviceId status } } }` },
       { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 15000 }
     );
     res.json(r.data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// Show today's clip status — was the clip pipeline run? What did it do?
+app.get('/admin/api/clips/status', adminAuth, (req, res) => {
+  const video = videoDB.getToday();
+  if (!video) return res.json({ video: null, message: 'No video today' });
+  res.json({
+    videoId: video.id,
+    date: video.date,
+    title: video.title,
+    durationSecs: video.durationSecs,
+    dailyPostedAt: video.dailyPostedAt || null,
+    clipsGeneratedAt: video.clipsGeneratedAt || null,
+    clipsScheduledAt: video.clipsScheduledAt || null,
+    clipCount: video.clips ? video.clips.length : 0,
+    clips: video.clips || [],
+    clipBufferResults: video.clipBufferResults || null,
+  });
 });
 
 app.post('/admin/api/webhooks/test', adminAuth, async (req, res) => {
@@ -525,7 +552,7 @@ app.get('/diag/clip-test', adminAuth, async (req, res) => {
     if (!video || !video.videoPath) return res.json({ error: 'No video today', hint: 'Generate a video first' });
 
     const { execFile } = require('child_process');
-    const ffmpegPath = require('ffmpeg-static');
+    const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
     const outputPath = video.videoPath.replace('.mp4', '_diagclip.mp4');
 
     await new Promise((resolve, reject) => {

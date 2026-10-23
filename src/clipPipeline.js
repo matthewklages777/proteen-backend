@@ -202,9 +202,15 @@ async function postClip(clipUrl, caption, platform, clip, video, scheduleTime) {
 }
 
 // ── Main: run the full clip pipeline for a video ──────────────────────────
-async function runClipPipeline(video) {
+async function runClipPipeline(video, opts = {}) {
   if (!video || !video.videoPath || !video.script) {
     console.log('[ClipPipeline] No video or script — skipping');
+    return;
+  }
+
+  // Prevent double-scheduling on the same day unless force=true
+  if (!opts.force && video.clipsScheduledAt) {
+    console.log('[ClipPipeline] Clips already scheduled at', video.clipsScheduledAt, '— skipping (pass force=true to override)');
     return;
   }
 
@@ -216,49 +222,75 @@ async function runClipPipeline(video) {
     return;
   }
 
+  // Save clip moments to DB for visibility
+  const { videoDB } = require('./videoDatabase');
+  videoDB.saveClipMoments(video.id, clipMoments);
+
   const readyClips = [];
   let ffmpegWorking = true;
 
   for (let i = 0; i < clipMoments.length; i++) {
     const clip    = clipMoments[i];
     const clipId  = `${video.id}_clip${i + 1}`;
-    const startSec = Math.max(0, Math.floor(clip.startSec || 0));
-    const endSec   = Math.min(video.durationSecs, Math.ceil(clip.endSec || startSec + 30));
+    const startSec = Math.max(0, Math.floor(clip.startSec || clip.estimatedStartSec || 0));
+    const durSecs  = video.durationSecs || Math.ceil(video.script.split(' ').length / 2.5);
+    const endSec   = Math.min(durSecs, Math.ceil(clip.endSec || clip.estimatedEndSec || startSec + 30));
 
     console.log(`[ClipPipeline] Cutting clip ${i + 1}/6: ${startSec}s–${endSec}s (${clip.type})`);
 
-    let clipUrl;
+    let clipUrl = null;
     if (ffmpegWorking) {
       try {
         await renderClip(video.videoPath, startSec, endSec, clipId);
         clipUrl = `${BACKEND_URL}/videos/${clipId}_clip.mp4`;
         console.log(`[ClipPipeline] Clip ${i + 1} ready: ${clipUrl}`);
       } catch (err) {
-        console.warn(`[ClipPipeline] FFmpeg failed on clip ${i + 1}, using full video URL:`, err.message);
+        console.warn(`[ClipPipeline] FFmpeg failed on clip ${i + 1}:`, err.message);
         ffmpegWorking = false;
-        clipUrl = video.videoUrl;
       }
-    } else {
-      clipUrl = video.videoUrl;
-      console.log(`[ClipPipeline] Using full video URL for clip ${i + 1} (FFmpeg unavailable)`);
+    }
+
+    // Fallback: only use full video URL if it's short enough for reels (≤90s).
+    // A 118s full video will be rejected by Instagram/Facebook Reels and YouTube Shorts.
+    if (!clipUrl) {
+      const fullDur = video.durationSecs || 999;
+      if (fullDur <= 90) {
+        clipUrl = video.videoUrl;
+        console.log(`[ClipPipeline] Using full video URL for clip ${i + 1} (${fullDur}s ≤ 90s)`);
+      } else {
+        console.warn(`[ClipPipeline] Skipping clip ${i + 1} — FFmpeg unavailable and full video (${fullDur}s) is too long for reels`);
+        continue;
+      }
     }
 
     const caption = await generateCaption(clip, video);
     readyClips.push({ clip, clipUrl, caption, index: i + 1 });
   }
 
-  console.log(`[ClipPipeline] ${readyClips.length} posts ready (ffmpegWorking=${ffmpegWorking}). Scheduling via Buffer...`);
+  if (!readyClips.length) {
+    console.error('[ClipPipeline] No clips ready — FFmpeg failed and full video too long. Aborting.');
+    return;
+  }
+
+  console.log(`[ClipPipeline] ${readyClips.length} clips ready (ffmpegWorking=${ffmpegWorking}). Scheduling via Buffer...`);
 
   try {
     const { postClips } = require('./poster');
     const bufferClips = readyClips.map(c => ({ clipUrl: c.clipUrl, caption: c.caption }));
-    await postClips(video, bufferClips);
-    console.log('[ClipPipeline] All posts scheduled in Buffer ✅');
+    const bufferResults = await postClips(video, bufferClips);
+
+    // Record that clips have been scheduled
+    videoDB.markClipsScheduled(video.id, bufferResults);
+    console.log('[ClipPipeline] All clips scheduled in Buffer ✅');
+
+    // Log TikTok URLs for manual posting (Buffer cannot auto-post video to TikTok)
+    console.log('[ClipPipeline] ── TikTok Manual Post URLs ──');
+    readyClips.forEach((c, idx) => console.log(`  Clip ${idx + 1} (${c.clip.type}): ${c.clipUrl}`));
   } catch (err) {
     console.error('[ClipPipeline] Buffer scheduling failed:', err.message);
   }
 
-  return readyClips.map(c => ({ clip: c.index, url: c.clipUrl }));
+  return readyClips.map(c => ({ clip: c.index, url: c.clipUrl, type: c.clip.type }));
 }
 
 module.exports = { runClipPipeline };

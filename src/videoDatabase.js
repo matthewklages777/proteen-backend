@@ -89,6 +89,18 @@ const videoDB = {
     writeFile(VIDEOS_DB, data);
   },
 
+  // Mark that clips have been scheduled in Buffer (prevents double-scheduling)
+  markClipsScheduled(videoId, results) {
+    initFile(VIDEOS_DB, { videos: [] });
+    const data = readFile(VIDEOS_DB);
+    const idx = data.videos.findIndex(v => v.id === videoId);
+    if (idx >= 0) {
+      data.videos[idx].clipsScheduledAt = new Date().toISOString();
+      if (results) data.videos[idx].clipBufferResults = results;
+    }
+    writeFile(VIDEOS_DB, data);
+  },
+
   // Get all videos (for archive browsing)
   getAllVideos() {
     initFile(VIDEOS_DB, { videos: [] });
