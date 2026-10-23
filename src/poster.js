@@ -66,11 +66,12 @@ async function schedulePost({ channelId, platform, text, mediaUrl, dueAt, title,
     ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
   };
 
-  // Buffer CreatePostInput requires 'schedulingType' in every call.
-  // Use 'customScheduled' + dueAt for future posts, 'automatic' to add to queue.
+  // Buffer CreatePostInput requires both 'schedulingType' AND 'mode'.
+  // schedulingType:'customScheduled' + mode:'customScheduled' for future posts.
+  // schedulingType:'automatic' + mode:'addToQueue' for queue posts.
   const input = inFuture
-    ? { ...base, schedulingType: 'customScheduled', dueAt }
-    : { ...base, schedulingType: 'automatic' };
+    ? { ...base, schedulingType: 'customScheduled', mode: 'customScheduled', dueAt }
+    : { ...base, schedulingType: 'automatic', mode: 'addToQueue' };
 
   console.log(`[Buffer] Posting to ${platform} (${channelId}) | ${inFuture ? `scheduled ${dueAt}` : 'add to queue'}`);
 
