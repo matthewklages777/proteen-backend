@@ -379,18 +379,22 @@ app.post('/admin/api/scholarships/mine', adminAuth, async (req, res) => {
   }
 });
 
-// Check Buffer channel connection status
+// Check Buffer channel connection status + introspect SchedulingType enum
 app.get('/admin/api/buffer/channels', adminAuth, async (req, res) => {
   const axios = require('axios');
   const token = process.env.BUFFER_ACCESS_TOKEN;
   if (!token) return res.status(500).json({ error: 'BUFFER_ACCESS_TOKEN not set' });
   try {
-    // Use the correct Buffer GraphQL structure — Channel type only has id, service, name, serviceId
     const r = await axios.post('https://api.buffer.com/graphql',
       { query: `{ organization(id: "6a0b4a9276619973c3a551a3") { channels { id service name serviceId } } }` },
       { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 15000 }
     );
-    res.json(r.data);
+    // Also introspect the SchedulingType enum to find valid values
+    const schema = await axios.post('https://api.buffer.com/graphql',
+      { query: `{ __type(name: "SchedulingType") { enumValues { name } } }` },
+      { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 15000 }
+    );
+    res.json({ channels: r.data, schedulingTypeEnum: schema.data });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
