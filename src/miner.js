@@ -43,7 +43,13 @@ async function searchArticles(topic, query) {
     );
     return response.data.results || [];
   } catch (err) {
-    console.error(`[Miner] Tavily search failed for "${query}":`, err.message);
+    const status = err.response?.status;
+    const detail = err.response?.data?.detail?.error || err.message;
+    if (status === 432 || (detail && detail.includes('usage limit'))) {
+      console.error(`[Miner] ⚠️  TAVILY QUOTA EXHAUSTED — mining paused until monthly reset. (${detail})`);
+    } else {
+      console.error(`[Miner] Tavily search failed for "${query}": ${err.message}`);
+    }
     return [];
   }
 }

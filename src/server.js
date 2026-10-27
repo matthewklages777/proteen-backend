@@ -26,7 +26,7 @@ const { scholarshipDB } = require('./scholarshipDatabase');
 const app = express();
 const PORT = process.env.PORT || 3001;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'proteen-admin';
-const MINE_HOURS = parseInt(process.env.MINE_INTERVAL_HOURS) || 4;
+const MINE_HOURS = parseInt(process.env.MINE_INTERVAL_HOURS) || 24;
 
 app.use(cors());
 app.use(express.json());
