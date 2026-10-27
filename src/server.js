@@ -149,6 +149,43 @@ app.post('/admin/api/mine', adminAuth, async (req, res) => {
   runMiningCycle().catch(err => console.error('[Admin] Mining error:', err.message));
 });
 
+// Synchronous mine endpoint — waits for full cycle and returns result
+app.post('/admin/api/mine/sync', adminAuth, async (req, res) => {
+  try {
+    const result = await runMiningCycle();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Tavily diagnostic — test one topic query and return raw results
+app.get('/admin/api/mine/diag', adminAuth, async (req, res) => {
+  const axios = require('axios');
+  const query = req.query.q || 'teen resilience motivation 2026';
+  const days  = parseInt(req.query.days) || 7;
+  try {
+    const response = await axios.post('https://api.tavily.com/search', {
+      api_key: process.env.TAVILY_API_KEY,
+      query,
+      search_depth: 'advanced',
+      include_answer: false,
+      include_raw_content: false,
+      max_results: 5,
+      days,
+    }, { timeout: 15000 });
+    const results = response.data.results || [];
+    const existing = require('./database').getArticles ? [] : [];
+    res.json({
+      query, days,
+      count: results.length,
+      results: results.map(r => ({ title: r.title, url: r.url, published_date: r.published_date })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message, response: err.response?.data });
+  }
+});
+
 app.post('/admin/api/approve-pending', adminAuth, (req, res) => {
   const threshold = parseInt(req.query.threshold) || 75;
   const articles = db.getArticles({ status: 'pending' });
