@@ -32,6 +32,7 @@ async function searchArticles(topic, query) {
         include_answer: false,
         include_raw_content: false,
         max_results: 5,
+        days: 7,
         include_domains: [],
         exclude_domains: [
           // Exclude adult/inappropriate sites

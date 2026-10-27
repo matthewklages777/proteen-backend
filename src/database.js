@@ -49,9 +49,9 @@ const db = {
     const existingUrls = new Set(data.articles.map(a => a.url));
     const fresh = newArticles.filter(a => !existingUrls.has(a.url));
     data.articles = [...fresh, ...data.articles];
-    // Keep max 500 articles to avoid file bloat
-    if (data.articles.length > 500) {
-      data.articles = data.articles.slice(0, 500);
+    // Keep max 1500 articles to avoid file bloat
+    if (data.articles.length > 1500) {
+      data.articles = data.articles.slice(0, 1500);
     }
     write(data);
     return fresh.length;
