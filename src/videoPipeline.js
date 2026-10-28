@@ -270,6 +270,44 @@ Return ONLY valid JSON (no markdown):
   return null;
 }
 
+// Generate Facebook-optimized post caption for the daily video
+async function generateFacebookCaption(script, topic) {
+  const prompt = `You are a Facebook content strategist for ProTeen Nation, a daily motivational channel for teenagers.
+
+Write a Facebook post caption for this motivational speech about "${topic.name}". Facebook's algorithm rewards posts that generate comments and shares in the first hour.
+
+SPEECH:
+---
+${script.slice(0, 1000)}
+---
+
+Rules:
+- Line 1: One powerful sentence pulled directly from the speech — the one that hits hardest. Make it the kind of line a parent would share to their teen's wall.
+- Line 2: blank line
+- Line 3-4: 1-2 sentences that set up WHY this message matters right now. Speak to PARENTS and TEENS both — they're both on Facebook.
+- Line 5: blank line
+- Line 6: Engagement hook — one of: "Tag a teen who needs to hear this 👇" OR "What's one thing from this message you're taking with you today?" OR "Share this with someone who's been struggling lately."
+- Line 7: blank line
+- Line 8: "Watch the full message 👆 | New video every day — ProTeen Nation"
+- Line 9: blank line
+- Line 10: 4-5 hashtags only (Facebook penalizes hashtag stuffing): #ProTeenNation #TeenMotivation #${topic.name.replace(/[\s&]+/g, '')} #Teens #Motivation
+
+Return ONLY the caption text, nothing else.`;
+
+  try {
+    const { OpenAI } = require('openai');
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const c = await openai.chat.completions.create({
+      model: 'gpt-4o-mini', max_tokens: 400,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    return c.choices[0].message.content.trim();
+  } catch (err) {
+    console.warn('[Pipeline] Facebook caption generation failed:', err.message);
+    return null;
+  }
+}
+
 async function runDailyVideoPipeline(topicOverride) {
   console.log('[Pipeline] Starting daily video pipeline at', new Date().toLocaleString());
 
@@ -305,9 +343,11 @@ async function runDailyVideoPipeline(topicOverride) {
   const rawTitle = script.split('.')[0].trim();
   const title = rawTitle.length <= 60 ? rawTitle : rawTitle.slice(0, 60).replace(/\s+\S*$/, '').trim();
 
-  // Generate SEO-optimized YouTube title + description
+  // Generate platform-optimized metadata (YouTube SEO + Facebook hook)
   const ytMeta = await generateYouTubeMeta(script, topic);
   if (ytMeta) console.log('[Pipeline] YouTube SEO title:', ytMeta.youtubeTitle);
+
+  const fbCaption = await generateFacebookCaption(script, topic);
 
   const videoPath = await renderVideo(audioPath, { id: videoId, title, topic: topic.id, topicName: topic.name });
   const videoUrl = `${BACKEND_URL}/videos/${videoId}.mp4`;
@@ -320,6 +360,7 @@ async function runDailyVideoPipeline(topicOverride) {
     youtubeTitle: ytMeta?.youtubeTitle || null,
     youtubeDescription: ytMeta?.youtubeDescription || null,
     youtubeTags: ytMeta?.youtubeTags || null,
+    facebookCaption: fbCaption || null,
     script,
     audioPath,
     videoPath,

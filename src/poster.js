@@ -124,7 +124,8 @@ async function postDailyVideo(video) {
   }
 
   const topicTag = (video.topicName || '').replace(/[\s&]+/g, '').replace(/[^a-zA-Z]/g, '');
-  const facebookCaption = `"${video.title}"\n\nToday's Daily Message — ProTeen Nation 🔥\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag} #Teens #Motivation`;
+  const facebookCaption = video.facebookCaption ||
+    `Today's Daily Message — ProTeen Nation 🔥\n\n"${video.title}"\n\nTag a teen who needs to hear this 👇\n\n#ProTeenNation #TeenMotivation #${topicTag} #Teens #Motivation`;
   const youtubeCaption  = buildYouTubeDescription(video);
 
   console.log('[Buffer] Scheduling daily video', dueAt ? `at ${dueAt.toISOString()}` : '(add to queue)');
@@ -145,6 +146,29 @@ async function postDailyVideo(video) {
   }
   console.log(`[Buffer] Daily video done — ${passed} posted, ${failed} failed`);
   return results;
+}
+
+// Build platform-specific captions for a clip.
+// Each platform has different algorithm priorities and character limits.
+function buildClipCaptions(baseCaption, video, topicTag) {
+  // Instagram: Reels algorithm rewards niche hashtag clusters + follow CTA
+  // 8-10 hashtags, first line is the hook, end with "Follow for daily motivation"
+  const instagram = `${baseCaption}\n\nFollow @proteennation for a new message every day 🔥`;
+
+  // Facebook: Comments and shares in first hour = reach. Keep hashtags minimal (3-5), add engagement question.
+  // Strip excess hashtags from baseCaption and replace with Facebook-optimized ending
+  const fbBody = baseCaption.split('\n\n#')[0].split('\n#')[0];
+  const facebook = `${fbBody}\n\nTag someone who needs to hear this 👇\n\n#ProTeenNation #TeenMotivation #${topicTag}`;
+
+  // Twitter/X: 280 char hard limit. One punchy line + 2 hashtags max.
+  const twitterBody = baseCaption.replace(/\n+#.*$/s, '').replace(/^"/, '').replace(/"$/, '').trim();
+  const twitterShort = twitterBody.length > 200 ? twitterBody.slice(0, 197) + '…' : twitterBody;
+  const twitter = `${twitterShort}\n\n#ProTeenNation #Teens`;
+
+  // YouTube Shorts: title has #Shorts, description mirrors Instagram style
+  const youtube = `${baseCaption}\n\n#Shorts`;
+
+  return { instagram, facebook, twitter, youtube, default: baseCaption };
 }
 
 // Schedule 6 clips at peak engagement times for teen audience (CDT = UTC-5)
@@ -172,11 +196,14 @@ async function postClips(video, clips) {
     const topicTag = (video.topicName || '').replace(/[\s&]+/g, '').replace(/[^a-zA-Z]/g, '');
     const baseCaption = clip.caption || `"${video.title}" 🔥\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag}`;
 
+    // Platform-specific caption variants
+    const captions = buildClipCaptions(baseCaption, video, topicTag);
+
     console.log(`[Buffer] Scheduling clip ${i + 1}/6 at ${slotTime.toISOString()}`);
     const clipResults = {};
     let passed = 0, failed = 0;
     for (const [platform, channelId] of Object.entries(CHANNELS)) {
-      const caption = platform === 'youtube' ? `${baseCaption}\n#Shorts` : baseCaption;
+      const caption = captions[platform] || captions.default;
       clipResults[platform] = await schedulePost({ channelId, platform, text: caption, mediaUrl: clip.clipUrl, dueAt, title: video.title, isClip: true, ytTitle: video.youtubeTitle });
       clipResults[platform].success ? passed++ : failed++;
       await delay(600);
