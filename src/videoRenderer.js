@@ -18,36 +18,36 @@ const LOGO_PATH  = path.join(ASSETS_DIR, 'logo.png');
 
 const SECS_PER_IMAGE = 3; // fast montage pacing
 
-// Topic-specific image queries — tightly scoped to American teenagers
+// Topic-specific image queries — explicitly scoped to high school age teenagers (14-18)
+// Use "high school student" and "teenager" rather than "boy/girl" to avoid child/adult results
 const TOPIC_QUERIES = {
-  resilience:    'american teen boy determination confident strong winning',
-  school:        'high school boy studying graduation american teen success',
-  relationships: 'american teen boys friends laughing hanging out locker room',
-  faith:         'american teen boy peaceful hope church sunrise cross',
-  sports:        'american teen boy athlete football basketball training champion',
-  health:        'american teen boy running fitness gym workout energy',
-  careers:       'american teen boy ambition entrepreneur business goal future',
-  civics:        'american teen boy community volunteer leadership flag service',
+  resilience:    'high school student determination confident teenager winning mindset',
+  school:        'high school student studying teenager graduation success academic',
+  relationships: 'high school students friends teenagers laughing together campus',
+  faith:         'teenager peaceful hope spiritual sunrise high school student',
+  sports:        'high school athlete teenager football basketball training sports',
+  health:        'teenager running fitness high school student workout healthy',
+  careers:       'high school student ambition teenager future career goal success',
+  civics:        'high school student volunteer teenager leadership community service',
 };
 
-// Inspirational scenery and American youth energy mixed into every video
-// Queries are rotated randomly so images differ day to day
+// Inspirational imagery — teen-aged subjects only, no children, no adults
 const INSPIRATIONAL_QUERIES = [
-  'american teenage boy sunset silhouette confident',
-  'high school boy friends laughing american town',
-  'teen boy walking trail mountain adventure',
-  'young boy sports team celebrate victory american',
-  'teenage boy beach ocean freedom sunrise',
-  'high school friends boys night game american',
-  'teen boy jumping skateboard city energy',
-  'young man graduation cap gown american school',
-  'teen boy guitar music performer stage spotlight',
-  'american teenage boy smiling confident portrait',
-  'boy running track field american high school',
-  'teen boy studying library books success',
-  'young american male student college campus',
-  'teen boy basketball court urban american city',
-  'high school boy locker room team spirit',
+  'high school student sunset silhouette teenager confident',
+  'teenagers friends laughing high school campus',
+  'high school student walking trail mountain adventure teenager',
+  'high school sports team celebrate victory teenagers',
+  'teenager beach ocean freedom sunrise high school',
+  'high school students night game friends teenagers',
+  'teenager skateboard city energy high school student',
+  'high school student graduation cap gown teenager',
+  'teenager guitar music performer stage high school',
+  'high school student smiling confident portrait teenager',
+  'teenager running track field high school athlete',
+  'high school student studying library books teenager',
+  'teenager college campus student high school senior',
+  'high school student basketball court teenager urban',
+  'teenagers locker room team spirit high school',
 ];
 
 function ensureDirs() {
@@ -198,6 +198,7 @@ async function fetchImages(query, count) {
       params: {
         key: apiKey, q: query, image_type: 'photo', orientation: 'vertical',
         per_page: count, safesearch: true, min_width: 720, page,
+        category: 'people', // restrict to people photos — filters out landscapes/objects that sneak in
       },
       timeout: 15000,
     });
