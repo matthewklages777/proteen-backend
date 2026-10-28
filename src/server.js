@@ -570,6 +570,14 @@ app.get('/admin/api/health', adminAuth, async (req, res) => {
   res.json(result);
 });
 
+app.get('/privacy', (req, res) => {
+  res.send(`<!DOCTYPE html><html><head><title>Privacy Policy - ProTeen Nation</title></head><body style="font-family:sans-serif;max-width:800px;margin:40px auto;padding:0 20px"><h1>Privacy Policy</h1><p><strong>ProTeen Nation</strong> ("we") operates proteennation.com and related services.</p><h2>Information We Collect</h2><p>We do not collect personal information from visitors. Our platform publishes motivational content for teenagers.</p><h2>Social Media</h2><p>We use automated tools to post content to social media platforms including TikTok, YouTube, Instagram, and Facebook. No user data is stored or shared.</p><h2>Contact</h2><p>Questions? Email us at matthewklages@me.com</p><p><em>Last updated: October 2026</em></p></body></html>`);
+});
+
+app.get('/terms', (req, res) => {
+  res.send(`<!DOCTYPE html><html><head><title>Terms of Service - ProTeen Nation</title></head><body style="font-family:sans-serif;max-width:800px;margin:40px auto;padding:0 20px"><h1>Terms of Service</h1><p>By accessing <strong>ProTeen Nation</strong> you agree to these terms.</p><h2>Content</h2><p>All motivational content is provided for educational and inspirational purposes. ProTeen Nation is not a substitute for professional counseling.</p><h2>Use</h2><p>Content may not be reproduced without permission. This platform is intended for general audiences including teenagers.</p><h2>Contact</h2><p>Questions? Email us at matthewklages@me.com</p><p><em>Last updated: October 2026</em></p></body></html>`);
+});
+
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'ProTeen Nation Backend', time: new Date().toISOString(), version: '2026-05-31-v2', commit: process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) || 'local' });
 });
