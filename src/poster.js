@@ -47,22 +47,30 @@ async function bufferQuery(variables) {
 // Platform-specific metadata required by Buffer API
 // metadata must be nested under the platform key
 // isClip: clips are short enough for Facebook Reels (≤90s); daily videos are not
-function getPlatformMetadata(platform, title, isClip = false, ytTitle = null) {
+function getPlatformMetadata(platform, title, isClip = false, ytTitle = null, ytTags = null) {
   const youtubeTitle = isClip
     ? `${(title || 'ProTeen Nation').slice(0, 80)} #Shorts`
     : ((ytTitle || title || 'ProTeen Nation Daily').slice(0, 100));
   switch (platform) {
     case 'instagram': return { instagram: { type: 'reel', shouldShareToFeed: true } };
     case 'facebook':  return isClip ? { facebook: { type: 'reel' } } : { facebook: { type: 'post' } };
-    case 'youtube':   return { youtube: { title: youtubeTitle, categoryId: '27' } };
+    case 'youtube': {
+      const ytMeta = { title: youtubeTitle, categoryId: '27' };
+      if (!isClip && ytTags) {
+        // Buffer YouTube metadata supports tags as an array of strings
+        const tags = ytTags.split(',').map(t => t.trim()).filter(Boolean).slice(0, 15);
+        if (tags.length) ytMeta.tags = tags;
+      }
+      return { youtube: ytMeta };
+    }
     default:          return {};
   }
 }
 
 // Schedule a single post to one Buffer channel
-async function schedulePost({ channelId, platform, text, mediaUrl, dueAt, title, isClip = false, ytTitle = null }) {
+async function schedulePost({ channelId, platform, text, mediaUrl, dueAt, title, isClip = false, ytTitle = null, ytTags = null }) {
   const inFuture = dueAt && new Date(dueAt).getTime() > Date.now() + 60000;
-  const metadata = getPlatformMetadata(platform, title, isClip, ytTitle);
+  const metadata = getPlatformMetadata(platform, title, isClip, ytTitle, ytTags);
 
   const base = {
     channelId,
@@ -131,7 +139,7 @@ async function postDailyVideo(video) {
       continue;
     }
     const text = platform === 'youtube' ? youtubeCaption : facebookCaption;
-    results[platform] = await schedulePost({ channelId, platform, text, mediaUrl: video.videoUrl, dueAt: dueAt?.toISOString(), title: video.title, ytTitle: video.youtubeTitle });
+    results[platform] = await schedulePost({ channelId, platform, text, mediaUrl: video.videoUrl, dueAt: dueAt?.toISOString(), title: video.title, ytTitle: video.youtubeTitle, ytTags: video.youtubeTags });
     results[platform].success ? passed++ : failed++;
     await delay(600);
   }

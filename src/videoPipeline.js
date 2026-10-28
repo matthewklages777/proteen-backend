@@ -191,29 +191,62 @@ async function generateAudio(script, videoId) {
 
 // Generate SEO-optimized YouTube title + description after script is written
 async function generateYouTubeMeta(script, topic, year = new Date().getFullYear()) {
-  const prompt = `You are a YouTube SEO expert for a teen motivational channel called ProTeen Nation.
+  const topicKeywords = {
+    resilience:    'teen resilience, mental toughness teenager, growth mindset teens, how to be strong teenager, overcome failure teen',
+    school:        'study tips high school, how to get good grades, teen academic success, high school motivation, student motivation',
+    relationships: 'teen friendships advice, healthy relationships teenagers, peer pressure teens, how to make friends teen, teenage relationships',
+    faith:         'teen spirituality, finding purpose teenager, faith and teens, meaning of life teenager, teen mindset purpose',
+    sports:        'teen athlete motivation, high school sports mindset, sports leadership teens, youth athlete inspiration, teen sports psychology',
+    health:        'teen mental health tips, healthy habits teenagers, teen wellness motivation, mental health teenager, teen self care',
+    careers:       'teen career advice, future career teenager, teen entrepreneurship, high school success career, Gen Z career motivation',
+    civics:        'teen community service, youth leadership, teens making a difference, high school leadership, Gen Z change makers',
+  };
+  const seeds = topicKeywords[topic.id] || `teen motivation, teenagers, ${topic.name.toLowerCase()}`;
 
-Given this motivational speech for teenagers about "${topic.name}", generate:
-1. A YouTube title optimized for search (50-65 chars). Format: "[Specific insight or question] | ProTeen Nation". Use keywords teens actually search. No clickbait, no ALL CAPS.
-2. A YouTube description (250-300 words) that:
-   - Opens with the most powerful line from the speech (grabs attention in search results)
-   - Has 2-3 sentences describing what teens will learn
-   - Includes a "What You'll Discover" bullet list (3 bullets)
-   - Has a subscribe CTA: "🔥 Subscribe for daily teen motivation → ProTeen Nation"
-   - Links: Website: https://proteennation.com | TikTok/Instagram: @proteennation
-   - Ends with 8-10 relevant hashtags (mix broad + niche: #Teens #TeenMotivation #ProTeenNation #${topic.name.replace(/\s+/g, '')} #YoungPeople #Motivation #${year} #GrowthMindset)
-3. 10 YouTube tags (keywords, no #, comma-separated): teen motivation, teenagers, ${topic.name.toLowerCase()}, etc.
+  const prompt = `You are a YouTube SEO expert for "ProTeen Nation," a daily motivational channel for teenagers aged 13–19.
 
-Speech:
+SPEECH (about ${topic.name}):
 ---
-${script.slice(0, 1200)}
+${script.slice(0, 1400)}
 ---
 
-Return ONLY valid JSON:
+Generate the following. Study the speech carefully — the title and description must match what it's actually about.
+
+1. YOUTUBE TITLE (50–65 characters):
+   - Lead with the specific angle of THIS speech, not a generic topic name
+   - Use question format OR "How to..." OR "Why..." — these get highest CTR
+   - Include one high-traffic keyword: teen, teenager, teens, high school, or youth
+   - End with " | ProTeen Nation" if it fits in 65 chars; otherwise omit
+   - Example good titles: "Why Failing in High School Makes You Stronger | ProTeen Nation"
+     "How to Build Real Confidence as a Teenager"
+     "The One Mindset Every Teen Needs to Succeed"
+
+2. YOUTUBE DESCRIPTION (280–320 words total):
+   Line 1-2 (CRUCIAL — shows in search): Start with the most powerful sentence from the speech verbatim, then one sentence of what this video is really about. These lines decide clicks.
+
+   Paragraph 2: 2-3 sentences on what this specific message teaches — use natural keyword phrases like "how to [topic] as a teenager" and "for teens who [situation from speech]."
+
+   Section "📌 In This Video:": 3 bullet points — specific takeaways from THIS speech, not generic.
+
+   Section "🔥 Subscribe": "Subscribe for a new motivational message every single day → ProTeen Nation"
+
+   Section "📲 Connect":
+   Website: https://proteennation.com
+   Instagram: @proteennation
+   TikTok: @proteennation
+
+   Final hashtags (10, mix broad + niche): #ProTeenNation #TeenMotivation #Teens #${topic.name.replace(/[\s&]+/g,'')} #WeAreTheFuture #HighSchool #YoungPeople #GrowthMindset #${year} #TeenLife
+
+3. YOUTUBE TAGS (500 chars max, comma-separated, no # symbols):
+   Start with these proven seeds: ${seeds}
+   Then add 8–12 more specific long-tail tags based on the speech content.
+   Include: exact match (teen motivation), broad match (teenagers), related (youth inspiration), long-tail (how to be confident as a teenager).
+
+Return ONLY valid JSON (no markdown):
 {
   "youtubeTitle": "...",
   "youtubeDescription": "...",
-  "youtubeTags": "teen motivation, teenagers, ..."
+  "youtubeTags": "tag1, tag2, tag3, ..."
 }`;
 
   let text = null;
@@ -221,7 +254,7 @@ Return ONLY valid JSON:
     const { OpenAI } = require('openai');
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const c = await openai.chat.completions.create({
-      model: 'gpt-4o-mini', max_tokens: 800,
+      model: 'gpt-4o-mini', max_tokens: 1000,
       messages: [{ role: 'user', content: prompt }],
     });
     text = c.choices[0].message.content.trim().replace(/```json|```/g, '').trim();
