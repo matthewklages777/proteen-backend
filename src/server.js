@@ -426,12 +426,11 @@ app.get('/admin/api/buffer/channels', adminAuth, async (req, res) => {
       { query: `{ organization(id: "6a0b4a9276619973c3a551a3") { channels { id service name serviceId } } }` },
       { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 15000 }
     );
-    // Also introspect the SchedulingType enum to find valid values
     const schema = await axios.post('https://api.buffer.com/graphql',
-      { query: `{ __type(name: "SchedulingType") { enumValues { name } } }` },
+      { query: `{ schedulingType: __type(name: "SchedulingType") { enumValues { name } } ytMeta: __type(name: "YouTubeMetadata") { inputFields { name type { name kind ofType { name } } } } createPostInput: __type(name: "CreatePostInput") { inputFields { name type { name kind ofType { name } } } } }` },
       { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 15000 }
     );
-    res.json({ channels: r.data, schedulingTypeEnum: schema.data });
+    res.json({ channels: r.data, schema: schema.data });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
