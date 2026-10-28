@@ -151,40 +151,64 @@ async function postDailyVideo(video) {
 // Build platform-specific captions for a clip.
 // Each platform has different algorithm priorities and character limits.
 function buildClipCaptions(baseCaption, video, topicTag) {
-  // Instagram: Reels algorithm rewards niche hashtag clusters + follow CTA
-  // 8-10 hashtags, first line is the hook, end with "Follow for daily motivation"
-  const instagram = `${baseCaption}\n\nFollow @proteennation for a new message every day 🔥`;
+  const topicHashtags = {
+    resilience:    '#MindsetMatters #GrowthMindset #OvercomeFailure #MentalToughness',
+    school:        '#StudyTips #HighSchool #StudentMotivation #AcademicSuccess',
+    relationships: '#TeenLife #Friendship #PeerPressure #HealthyRelationships',
+    faith:         '#FaithAndPurpose #TeenFaith #FindYourPurpose #Spirituality',
+    sports:        '#TeenAthlete #SportsMotivation #YouthAthlete #WinningMindset',
+    health:        '#TeenMentalHealth #SelfCare #WellnessTips #MentalHealthMatters',
+    careers:       '#FutureLeaders #TeenEntrepreneur #CareerGoals #GenZ',
+    civics:        '#YouthLeadership #MakeADifference #CommunityService #GenZLeads',
+  };
+  const topicTags = topicHashtags[video.topic] || '#TeenLife #Mindset #GrowthMindset #YoungAndFocused';
 
-  // Facebook: Comments and shares in first hour = reach. Keep hashtags minimal (3-5), add engagement question.
-  // Strip excess hashtags from baseCaption and replace with Facebook-optimized ending
+  // Instagram: Reels algorithm rewards niche hashtag clusters + follow CTA
+  // 10-15 targeted hashtags mixing broad + niche — broad for discovery, niche for algorithm match
+  const instagram = `${baseCaption}\n\n${topicTags} #TeenMotivation #ProTeenNation #WeAreTheFuture #Teens #MotivationDaily #YoungMinds\n\nFollow @proteennation — new message every day 🔥`;
+
+  // Facebook: shares + comments in first hour = massive reach. Engagement question drives comments.
+  // Keep to 3 hashtags max — FB penalizes hashtag stuffing
   const fbBody = baseCaption.split('\n\n#')[0].split('\n#')[0];
-  const facebook = `${fbBody}\n\nTag someone who needs to hear this 👇\n\n#ProTeenNation #TeenMotivation #${topicTag}`;
+  const facebook = `${fbBody}\n\nTag a teen who needs to hear this 👇\n\nVisit proteennation.com for daily motivation\n\n#ProTeenNation #TeenMotivation #${topicTag}`;
 
   // Twitter/X: 280 char hard limit. One punchy line + 2 hashtags max.
   const twitterBody = baseCaption.replace(/\n+#.*$/s, '').replace(/^"/, '').replace(/"$/, '').trim();
   const twitterShort = twitterBody.length > 200 ? twitterBody.slice(0, 197) + '…' : twitterBody;
   const twitter = `${twitterShort}\n\n#ProTeenNation #Teens`;
 
-  // YouTube Shorts: title has #Shorts, description mirrors Instagram style
-  const youtube = `${baseCaption}\n\n#Shorts`;
+  // YouTube Shorts: maximize discoverability with #Shorts + topic tags
+  const youtube = `${baseCaption}\n\n${topicTags} #Shorts #YouTubeShorts #ProTeenNation #TeenMotivation`;
 
   return { instagram, facebook, twitter, youtube, default: baseCaption };
 }
 
 // Schedule 6 clips at peak engagement times for teen audience (CDT = UTC-5)
-// 7:00 AM, 11:30 AM, 3:30 PM, 5:30 PM, 8:00 PM, 10:00 PM CDT
-// UTC: 12:00, 16:30, 20:30, 22:30, 01:00, 03:00
+// Clip times CDT: 8:00 AM, 12:00 PM, 3:30 PM, 5:00 PM, 7:30 PM, 9:30 PM
+// UTC:            13:00,   17:00,    20:30,    22:00,   00:30,   02:30
+//
+// Platform frequency caps (algorithm optimization):
+//   YouTube + Twitter: all 6 clips (high-frequency rewards both)
+//   Facebook: clips 2, 4, 6 only — FB penalizes pages that post 6x/day; 3x gets more reach
+//   Instagram: clips 1, 3, 5 only — Reels algorithm prefers 1-3/day; staggered from FB slots
+const POST_TIMES_UTC = ['13:00', '17:00', '20:30', '22:00', '00:30', '02:30'];
+const PLATFORM_CLIP_SLOTS = {
+  youtube:   [0, 1, 2, 3, 4, 5], // all 6
+  twitter:   [0, 1, 2, 3, 4, 5], // all 6
+  facebook:  [1, 3, 5],           // clips 2, 4, 6 (peak: noon, 5 PM, 9:30 PM)
+  instagram: [0, 2, 4],           // clips 1, 3, 5 (peak: 8 AM, 3:30 PM, 7:30 PM)
+};
+
 async function postClips(video, clips) {
   if (!clips?.length) { console.warn('[Buffer] No clips'); return []; }
 
-  const POST_TIMES_UTC = ['12:00', '16:30', '20:30', '22:30', '01:00', '03:00'];
   const now = new Date();
   const results = [];
 
   for (let i = 0; i < Math.min(clips.length, 6); i++) {
     const clip   = clips[i];
     const [h, m] = POST_TIMES_UTC[i].split(':').map(Number);
-    const dayOff = h < 6 ? 1 : 0; // 01:00 and 03:00 UTC are next calendar day
+    const dayOff = h < 6 ? 1 : 0; // 00:30 and 02:30 UTC are next calendar day
 
     let slotTime = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOff, h, m, 0));
     if (slotTime.getTime() <= Date.now() + 60000) {
@@ -203,6 +227,12 @@ async function postClips(video, clips) {
     const clipResults = {};
     let passed = 0, failed = 0;
     for (const [platform, channelId] of Object.entries(CHANNELS)) {
+      const allowedSlots = PLATFORM_CLIP_SLOTS[platform] || [0, 1, 2, 3, 4, 5];
+      if (!allowedSlots.includes(i)) {
+        console.log(`[Buffer] Skipping clip ${i + 1} for ${platform} (frequency cap)`);
+        clipResults[platform] = { skipped: true, reason: 'frequency cap' };
+        continue;
+      }
       const caption = captions[platform] || captions.default;
       clipResults[platform] = await schedulePost({ channelId, platform, text: caption, mediaUrl: clip.clipUrl, dueAt, title: video.title, isClip: true, ytTitle: video.youtubeTitle });
       clipResults[platform].success ? passed++ : failed++;
