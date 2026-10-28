@@ -288,12 +288,31 @@ async function runClipPipeline(video, opts = {}) {
     // Record that clips have been scheduled
     videoDB.markClipsScheduled(video.id, bufferResults);
     console.log('[ClipPipeline] All clips scheduled in Buffer ✅');
-
-    // Log TikTok URLs for manual posting (Buffer cannot auto-post video to TikTok)
-    console.log('[ClipPipeline] ── TikTok Manual Post URLs ──');
-    readyClips.forEach((c, idx) => console.log(`  Clip ${idx + 1} (${c.clip.type}): ${c.clipUrl}`));
   } catch (err) {
     console.error('[ClipPipeline] Buffer scheduling failed:', err.message);
+  }
+
+  // Post clips directly to TikTok (if connected via TIKTOK_ACCESS_TOKEN)
+  try {
+    const { postToTikTok } = require('./tiktokPoster');
+    const tiktokToken = process.env.TIKTOK_ACCESS_TOKEN;
+    if (tiktokToken) {
+      console.log('[ClipPipeline] Posting clips to TikTok directly...');
+      for (const c of readyClips) {
+        const result = await postToTikTok({ videoUrl: c.clipUrl, caption: c.caption, title: video.title });
+        console.log(`[ClipPipeline] TikTok clip ${c.index} (${c.clip.type}): ${result.success ? '✅' : '❌ ' + result.reason}`);
+        await new Promise(r => setTimeout(r, 3000)); // 3s gap between TikTok uploads
+      }
+    } else {
+      // Not connected — log URLs for manual posting
+      console.log('[ClipPipeline] ── TikTok Manual Post URLs (connect at /admin/tiktok-auth to automate) ──');
+      readyClips.forEach((c, idx) => console.log(`  Clip ${idx + 1} (${c.clip.type}): ${c.clipUrl}`));
+    }
+  } catch (err) {
+    console.error('[ClipPipeline] TikTok posting failed:', err.message);
+    // Log URLs so manual posting is still possible
+    console.log('[ClipPipeline] ── TikTok Manual Post URLs ──');
+    readyClips.forEach((c, idx) => console.log(`  Clip ${idx + 1} (${c.clip.type}): ${c.clipUrl}`));
   }
 
   return readyClips.map(c => ({ clip: c.index, url: c.clipUrl, type: c.clip.type }));

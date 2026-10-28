@@ -647,6 +647,46 @@ app.get('/admin/api/test-ffmpeg', adminAuth, async (req, res) => {
   }
 });
 
+// ── TikTok OAuth + manual post ───────────────────────────────────────────────
+app.get('/admin/tiktok-auth', adminAuth, (req, res) => {
+  const { getTikTokAuthUrl } = require('./tiktokPoster');
+  const redirect = `${process.env.BACKEND_URL || 'https://proteen-backend-production.up.railway.app'}/admin/tiktok-callback`;
+  const url = getTikTokAuthUrl(redirect);
+  if (!url) return res.json({ error: 'TIKTOK_CLIENT_KEY not set in Railway env vars. Add it first.' });
+  res.redirect(url);
+});
+
+app.get('/admin/tiktok-callback', async (req, res) => {
+  const { code } = req.query;
+  if (!code) return res.json({ error: 'No code returned from TikTok' });
+  try {
+    const { exchangeTikTokCode } = require('./tiktokPoster');
+    const redirect = `${process.env.BACKEND_URL || 'https://proteen-backend-production.up.railway.app'}/admin/tiktok-callback`;
+    const data = await exchangeTikTokCode(code, redirect);
+    const { access_token, open_id, expires_in } = data;
+    res.json({
+      success: true,
+      message: 'TikTok connected! Add these to Railway env vars, then restart the server:',
+      TIKTOK_ACCESS_TOKEN: access_token,
+      TIKTOK_OPEN_ID:      open_id,
+      expires_in_days:     Math.round(expires_in / 86400),
+    });
+  } catch (err) {
+    res.json({ error: err.message });
+  }
+});
+
+app.post('/admin/api/tiktok/test', adminAuth, async (req, res) => {
+  const { postToTikTok } = require('./tiktokPoster');
+  const video = videoDB.getToday();
+  if (!video) return res.json({ error: 'No video today' });
+  const clips = video.clipBufferResults || [];
+  const clipUrl = clips[0] ? video.videoUrl : null;
+  if (!clipUrl) return res.json({ error: 'No clip URL available' });
+  const result = await postToTikTok({ videoUrl: clipUrl, caption: `${video.title} #ProTeenNation #WeAreTheFuture #Teens`, title: video.title });
+  res.json(result);
+});
+
 app.get('/admin', (req, res) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.set('Pragma', 'no-cache');

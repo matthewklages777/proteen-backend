@@ -47,19 +47,22 @@ async function bufferQuery(variables) {
 // Platform-specific metadata required by Buffer API
 // metadata must be nested under the platform key
 // isClip: clips are short enough for Facebook Reels (≤90s); daily videos are not
-function getPlatformMetadata(platform, title, isClip = false) {
+function getPlatformMetadata(platform, title, isClip = false, ytTitle = null) {
+  const youtubeTitle = isClip
+    ? `${(title || 'ProTeen Nation').slice(0, 80)} #Shorts`
+    : ((ytTitle || title || 'ProTeen Nation Daily').slice(0, 100));
   switch (platform) {
     case 'instagram': return { instagram: { type: 'reel', shouldShareToFeed: true } };
     case 'facebook':  return isClip ? { facebook: { type: 'reel' } } : { facebook: { type: 'post' } };
-    case 'youtube':   return { youtube:   { title: (title || 'ProTeen Nation Daily').slice(0, 100), categoryId: '27' } };
+    case 'youtube':   return { youtube: { title: youtubeTitle, categoryId: '27' } };
     default:          return {};
   }
 }
 
 // Schedule a single post to one Buffer channel
-async function schedulePost({ channelId, platform, text, mediaUrl, dueAt, title, isClip = false }) {
+async function schedulePost({ channelId, platform, text, mediaUrl, dueAt, title, isClip = false, ytTitle = null }) {
   const inFuture = dueAt && new Date(dueAt).getTime() > Date.now() + 60000;
-  const metadata = getPlatformMetadata(platform, title, isClip);
+  const metadata = getPlatformMetadata(platform, title, isClip, ytTitle);
 
   const base = {
     channelId,
@@ -93,6 +96,14 @@ async function schedulePost({ channelId, platform, text, mediaUrl, dueAt, title,
   }
 }
 
+// Build the YouTube description — use AI-generated one if available, otherwise a rich fallback
+function buildYouTubeDescription(video) {
+  if (video.youtubeDescription) return video.youtubeDescription;
+  const topicTag = (video.topicName || '').replace(/[\s&]+/g, '').replace(/[^a-zA-Z]/g, '');
+  const year = new Date().getFullYear();
+  return `${video.title}\n\nA powerful daily motivational message for teenagers from ProTeen Nation. This speech is part of our daily series helping teens build confidence, resilience, and a winning mindset.\n\n🔥 Subscribe for daily teen motivation → ProTeen Nation\n\n💪 What You'll Get From This Channel:\n• Daily motivational speeches designed for teens\n• Real talk about ${video.topicName || 'mindset and growth'}\n• Practical advice teens can act on today\n\n📲 Follow Us:\nWebsite: https://proteennation.com\nInstagram: @proteennation\nTikTok: @proteennation\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag} #Teens #Motivation #${year} #GrowthMindset #YoungPeople #TeenLife`;
+}
+
 // Post today's daily video to long-form channels at 6 AM CST (11:00 UTC)
 async function postDailyVideo(video) {
   if (!video?.videoUrl) { console.warn('[Buffer] No videoUrl'); return {}; }
@@ -105,9 +116,12 @@ async function postDailyVideo(video) {
   }
 
   const topicTag = (video.topicName || '').replace(/[\s&]+/g, '').replace(/[^a-zA-Z]/g, '');
-  const caption  = `"${video.title}"\n\nToday's Daily Message — ProTeen Nation 🔥\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag} #Teens #Motivation`;
+  const facebookCaption = `"${video.title}"\n\nToday's Daily Message — ProTeen Nation 🔥\n\n#ProTeenNation #WeAreTheFuture #TeenMotivation #${topicTag} #Teens #Motivation`;
+  const youtubeCaption  = buildYouTubeDescription(video);
 
   console.log('[Buffer] Scheduling daily video', dueAt ? `at ${dueAt.toISOString()}` : '(add to queue)');
+  if (video.youtubeTitle) console.log('[Buffer] YouTube SEO title:', video.youtubeTitle);
+
   const results = {};
   let passed = 0, failed = 0;
   for (const [platform, channelId] of Object.entries(CHANNELS)) {
@@ -116,7 +130,8 @@ async function postDailyVideo(video) {
       results[platform] = { skipped: true, reason: 'clip-only platform' };
       continue;
     }
-    results[platform] = await schedulePost({ channelId, platform, text: caption, mediaUrl: video.videoUrl, dueAt: dueAt?.toISOString(), title: video.title });
+    const text = platform === 'youtube' ? youtubeCaption : facebookCaption;
+    results[platform] = await schedulePost({ channelId, platform, text, mediaUrl: video.videoUrl, dueAt: dueAt?.toISOString(), title: video.title, ytTitle: video.youtubeTitle });
     results[platform].success ? passed++ : failed++;
     await delay(600);
   }
@@ -154,7 +169,7 @@ async function postClips(video, clips) {
     let passed = 0, failed = 0;
     for (const [platform, channelId] of Object.entries(CHANNELS)) {
       const caption = platform === 'youtube' ? `${baseCaption}\n#Shorts` : baseCaption;
-      clipResults[platform] = await schedulePost({ channelId, platform, text: caption, mediaUrl: clip.clipUrl, dueAt, title: video.title, isClip: true });
+      clipResults[platform] = await schedulePost({ channelId, platform, text: caption, mediaUrl: clip.clipUrl, dueAt, title: video.title, isClip: true, ytTitle: video.youtubeTitle });
       clipResults[platform].success ? passed++ : failed++;
       await delay(600);
     }

@@ -189,6 +189,54 @@ async function generateAudio(script, videoId) {
   return audioPath;
 }
 
+// Generate SEO-optimized YouTube title + description after script is written
+async function generateYouTubeMeta(script, topic, year = new Date().getFullYear()) {
+  const prompt = `You are a YouTube SEO expert for a teen motivational channel called ProTeen Nation.
+
+Given this motivational speech for teenagers about "${topic.name}", generate:
+1. A YouTube title optimized for search (50-65 chars). Format: "[Specific insight or question] | ProTeen Nation". Use keywords teens actually search. No clickbait, no ALL CAPS.
+2. A YouTube description (250-300 words) that:
+   - Opens with the most powerful line from the speech (grabs attention in search results)
+   - Has 2-3 sentences describing what teens will learn
+   - Includes a "What You'll Discover" bullet list (3 bullets)
+   - Has a subscribe CTA: "🔥 Subscribe for daily teen motivation → ProTeen Nation"
+   - Links: Website: https://proteennation.com | TikTok/Instagram: @proteennation
+   - Ends with 8-10 relevant hashtags (mix broad + niche: #Teens #TeenMotivation #ProTeenNation #${topic.name.replace(/\s+/g, '')} #YoungPeople #Motivation #${year} #GrowthMindset)
+3. 10 YouTube tags (keywords, no #, comma-separated): teen motivation, teenagers, ${topic.name.toLowerCase()}, etc.
+
+Speech:
+---
+${script.slice(0, 1200)}
+---
+
+Return ONLY valid JSON:
+{
+  "youtubeTitle": "...",
+  "youtubeDescription": "...",
+  "youtubeTags": "teen motivation, teenagers, ..."
+}`;
+
+  let text = null;
+  try {
+    const { OpenAI } = require('openai');
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const c = await openai.chat.completions.create({
+      model: 'gpt-4o-mini', max_tokens: 800,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    text = c.choices[0].message.content.trim().replace(/```json|```/g, '').trim();
+  } catch (err) {
+    console.warn('[Pipeline] YouTube meta generation failed:', err.message);
+  }
+
+  try {
+    if (text) return JSON.parse(text);
+  } catch (e) {
+    console.warn('[Pipeline] YouTube meta JSON parse failed:', e.message);
+  }
+  return null;
+}
+
 async function runDailyVideoPipeline(topicOverride) {
   console.log('[Pipeline] Starting daily video pipeline at', new Date().toLocaleString());
 
@@ -223,9 +271,32 @@ async function runDailyVideoPipeline(topicOverride) {
   const audioPath = await generateAudio(script, videoId);
   const rawTitle = script.split('.')[0].trim();
   const title = rawTitle.length <= 60 ? rawTitle : rawTitle.slice(0, 60).replace(/\s+\S*$/, '').trim();
+
+  // Generate SEO-optimized YouTube title + description
+  const ytMeta = await generateYouTubeMeta(script, topic);
+  if (ytMeta) console.log('[Pipeline] YouTube SEO title:', ytMeta.youtubeTitle);
+
   const videoPath = await renderVideo(audioPath, { id: videoId, title, topic: topic.id, topicName: topic.name });
   const videoUrl = `${BACKEND_URL}/videos/${videoId}.mp4`;
-  const videoRecord = { id: videoId, date: new Date().toISOString().split('T')[0], topic: topic.id, topicName: topic.name, title, script, audioPath, videoPath, videoUrl, status: 'ready', durationSecs: Math.ceil(script.split(' ').length / 2.5), generatedAt: new Date().toISOString(), voiceName: ELEVENLABS_VOICE_NAME, voiceId: ELEVENLABS_VOICE_ID };
+  const videoRecord = {
+    id: videoId,
+    date: new Date().toISOString().split('T')[0],
+    topic: topic.id,
+    topicName: topic.name,
+    title,
+    youtubeTitle: ytMeta?.youtubeTitle || null,
+    youtubeDescription: ytMeta?.youtubeDescription || null,
+    youtubeTags: ytMeta?.youtubeTags || null,
+    script,
+    audioPath,
+    videoPath,
+    videoUrl,
+    status: 'ready',
+    durationSecs: Math.ceil(script.split(' ').length / 2.5),
+    generatedAt: new Date().toISOString(),
+    voiceName: ELEVENLABS_VOICE_NAME,
+    voiceId: ELEVENLABS_VOICE_ID,
+  };
   videoDB.saveVideo(videoRecord);
   console.log('[Pipeline] Video pipeline complete:', videoRecord.title);
   return videoRecord;
