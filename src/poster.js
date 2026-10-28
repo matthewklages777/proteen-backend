@@ -18,8 +18,10 @@ const CHANNELS = {
   youtube:   '6a0b5135090476fb993332bc',
 };
 
-// X/Twitter has a short video limit — only receives clips, not the full daily video
-const CLIP_ONLY_CHANNELS = ['twitter'];
+// Instagram and X/Twitter are short-form platforms — only receive clips, not the full daily video.
+// Instagram reels max is 90s; the full daily speech (~110s) would appear right before clip 1 (1h later),
+// making it look like the same video posted twice to followers.
+const CLIP_ONLY_CHANNELS = ['instagram', 'twitter'];
 
 const MUTATION = `
   mutation CreatePost($input: CreatePostInput!) {
