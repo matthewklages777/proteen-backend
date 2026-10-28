@@ -279,6 +279,54 @@ function buildConcatFile(imagePaths, totalDuration, concatFile) {
   console.log(`[Renderer] ${lines.length} image slots for ${totalDuration.toFixed(0)}s audio`);
 }
 
+// Generate a 1280x720 YouTube thumbnail: landscape background + gradient + bold title + branding
+async function buildThumbnail(imagePath, videoRecord, outputPath) {
+  const W = 1280, H = 720;
+  const title = videoRecord.youtubeTitle || videoRecord.title || 'ProTeen Nation';
+  const titleLines = wrapText(title.replace(' | ProTeen Nation', ''), 32);
+  const topicName  = (videoRecord.topicName || '').toUpperCase();
+
+  const titleTexts = titleLines.map((line, i) =>
+    `<text x="640" y="${370 + i * 90}" font-family="${pfFont()}" font-size="76" font-weight="700"
+      fill="#ffffff" text-anchor="middle" stroke="#000" stroke-width="3">${escapeXml(line)}</text>`
+  ).join('\n');
+
+  const svgOverlay = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+  ${fontStyles()}
+  <defs>
+    <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#000" stop-opacity="0.55"/>
+      <stop offset="45%"  stop-color="#000" stop-opacity="0.20"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.80"/>
+    </linearGradient>
+  </defs>
+  <rect width="${W}" height="${H}" fill="url(#grad)"/>
+  <!-- Gold accent bars -->
+  <rect x="0" y="0"       width="${W}" height="8"  fill="#e8b84b"/>
+  <rect x="0" y="${H - 8}" width="${W}" height="8" fill="#e8b84b"/>
+  <!-- Brand name -->
+  <text x="640" y="64" font-family="${logoFont()}" font-size="46" font-weight="700"
+    fill="#e8b84b" text-anchor="middle" letter-spacing="2">PROTEEN NATION</text>
+  <!-- Topic pill -->
+  <rect x="${640 - 120}" y="78" width="240" height="34" rx="17" fill="#e8b84b" opacity="0.9"/>
+  <text x="640" y="101" font-family="${dmFont()}" font-size="18" font-weight="700"
+    fill="#000" text-anchor="middle" letter-spacing="3">${escapeXml(topicName)}</text>
+  <!-- Title lines -->
+  ${titleTexts}
+  <!-- Bottom tagline -->
+  <text x="640" y="${H - 24}" font-family="${dmFont()}" font-size="22"
+    fill="#ffffff" text-anchor="middle" opacity="0.8">New video every day  •  proteennation.com</text>
+</svg>`;
+
+  const svgBuf = Buffer.from(svgOverlay);
+  await sharp(imagePath)
+    .resize(W, H, { fit: 'cover', position: 'centre' })
+    .composite([{ input: svgBuf, blend: 'over' }])
+    .jpeg({ quality: 92 })
+    .toFile(outputPath);
+}
+
 // Main render: fast image montage + branding overlay + audio
 async function renderVideo(audioPath, videoRecord) {
   ensureDirs();
@@ -323,6 +371,22 @@ async function renderVideo(audioPath, videoRecord) {
   } catch (err) {
     console.warn('[Renderer] Falling back to static frame:', err.message);
     await renderStaticFallback(audioPath, videoRecord, videoPath, tmpDir);
+  }
+
+  // Generate YouTube thumbnail (1280x720) from the first downloaded image
+  const thumbPath = path.join(VIDEO_DIR, videoRecord.id + '_thumb.jpg');
+  try {
+    const imageUrls2 = await fetchTopicImages(videoRecord.topic).catch(() => []);
+    if (imageUrls2.length) {
+      const tmpThumbDir = path.join(TMP_DIR, videoRecord.id + '_thumb');
+      if (!fs.existsSync(tmpThumbDir)) fs.mkdirSync(tmpThumbDir, { recursive: true });
+      const [firstPath] = await downloadImages(imageUrls2.slice(0, 1), tmpThumbDir);
+      await buildThumbnail(firstPath, videoRecord, thumbPath);
+      fs.rmSync(tmpThumbDir, { recursive: true, force: true });
+      console.log('[Renderer] Thumbnail saved:', thumbPath);
+    }
+  } catch (err) {
+    console.warn('[Renderer] Thumbnail generation failed (non-fatal):', err.message);
   }
 
   console.log('[Renderer] Video saved:', videoPath);
@@ -435,4 +499,4 @@ async function renderClip(fullVideoPath, startSec, endSec, clipId) {
   }
 }
 
-module.exports = { renderVideo, renderClip };
+module.exports = { renderVideo, renderClip, buildThumbnail };

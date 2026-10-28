@@ -43,13 +43,20 @@ async function generateSpeech(topic, recentTitles = []) {
 
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
-  const prompt = `Today is ${today}. Write a powerful 2-3 minute motivational speech for teenagers about ${topic.name}.${avoidBlock}${avoidSection}
+  const prompt = `Today is ${today}. Write a powerful 2-minute motivational speech for teenagers about ${topic.name}.${avoidBlock}${avoidSection}
 
-This speech will be read aloud by a voice AI — write for the EAR, not the eye. Use natural spoken language: short sentences, contractions (you're, don't, it's, that's), conversational rhythm. Avoid formal or essay-like phrasing.
+This speech will be read aloud by a voice AI — write for the EAR, not the eye. Use natural spoken language: contractions, short punchy sentences mixed with longer flowing thoughts. No essay phrasing. Speak directly to the teen using "you."
 
-Open with a bold, attention-grabbing spoken line that is UNIQUE to today — no recycled openers. Speak directly to the teen using "you". Be specific and honest. Build emotional momentum — start grounded, rise to passion, pull back to something quiet and real, then finish with fire. Include one concrete action they can take today. Use short punchy sentences for emphasis at peak moments. Vary sentence length naturally — mix quick punches with longer flowing thoughts. End with an unforgettable closing line that feels fresh and original. STRICT LIMIT: 280-320 words.
+STRUCTURE (maximize watch-time retention in the 2-minute window):
+1. HOOK (30-40 words): One explosive line — a bold question, a raw truth, or a specific challenge. Not generic. Stop them cold.
+2. THE STORY (80-100 words): One brief, vivid scenario a teen could live. Use details. Create tension.
+3. THE LESSON (80-100 words): The insight. Give it a name. Use an analogy. Be concrete.
+4. THE CHALLENGE (30-40 words): One specific action they can take TODAY. Not vague — concrete.
+5. THE CLOSE (20-30 words): Quiet, real, unforgettable. End with fire. Then: "New message tomorrow. ProTeen Nation."
 
-Return only the speech text, no titles or labels.`;
+STRICT LIMIT: 280-320 words. Every word must earn its place.
+
+Return only the speech text, no section labels or headers.`;
 
   let rawScript = null;
 
@@ -91,14 +98,14 @@ Return only the speech text, no titles or labels.`;
     console.log('[Pipeline] Script generated with GPT-4o (fallback)');
   }
 
-  // Hard enforce word limit — truncate at sentence boundary if over 350 words
+  // Hard enforce word limit — truncate at sentence boundary if over 340 words
   const words = rawScript.split(/\s+/);
   let script = rawScript;
-  if (words.length > 350) {
+  if (words.length > 340) {
     const sentences = rawScript.match(/[^.!?]+[.!?]+/g) || [rawScript];
     let trimmed = '';
     for (const s of sentences) {
-      if ((trimmed + s).split(/\s+/).length > 340) break;
+      if ((trimmed + s).split(/\s+/).length > 330) break;
       trimmed += s;
     }
     script = trimmed.trim() || rawScript.slice(0, 1800);
@@ -124,9 +131,9 @@ async function generateAudio(script, videoId) {
           text: script,
           model_id: 'eleven_multilingual_v2',
           voice_settings: {
-            stability: 0.35,
-            similarity_boost: 0.70,
-            style: 0.55,
+            stability: 0.28,        // lower = more expressive natural variation
+            similarity_boost: 0.78, // higher = stays true to Charlie's voice character
+            style: 0.68,            // higher = more dramatic/emotional delivery
             use_speaker_boost: true,
           },
         },
@@ -349,8 +356,9 @@ async function runDailyVideoPipeline(topicOverride) {
 
   const fbCaption = await generateFacebookCaption(script, topic);
 
-  const videoPath = await renderVideo(audioPath, { id: videoId, title, topic: topic.id, topicName: topic.name });
-  const videoUrl = `${BACKEND_URL}/videos/${videoId}.mp4`;
+  const videoPath = await renderVideo(audioPath, { id: videoId, title, youtubeTitle: ytMeta?.youtubeTitle, topic: topic.id, topicName: topic.name });
+  const videoUrl    = `${BACKEND_URL}/videos/${videoId}.mp4`;
+  const thumbUrl    = `${BACKEND_URL}/videos/${videoId}_thumb.jpg`;
   const videoRecord = {
     id: videoId,
     date: new Date().toISOString().split('T')[0],
@@ -361,6 +369,7 @@ async function runDailyVideoPipeline(topicOverride) {
     youtubeDescription: ytMeta?.youtubeDescription || null,
     youtubeTags: ytMeta?.youtubeTags || null,
     facebookCaption: fbCaption || null,
+    thumbnailUrl: thumbUrl,
     script,
     audioPath,
     videoPath,
